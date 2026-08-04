@@ -6,36 +6,36 @@ import psutil
 from flask import Flask
 import telebot
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
-from google import genai
+from openai import OpenAI
 
 # ----------------- LOGGING & CONFIG -----------------
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "").strip()
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
+OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "").strip()
 
 try:
     OWNER_ID = int(os.environ.get("OWNER_ID", "8088024998"))
 except ValueError:
     OWNER_ID = 8088024998
 
-# 1. INITIALIZE BOT FIRST (Isse Line 2 NameError nahi aayega)
+# 1. INITIALIZE TELEBOT & FLASK
 jarvis = telebot.TeleBot(BOT_TOKEN)
 web_app = Flask(__name__)
 
-# 2. INITIALIZE GEMINI CLIENT
+# 2. INITIALIZE OPENAI CLIENT
 ai_client = None
-if GEMINI_API_KEY:
+if OPENAI_API_KEY:
     try:
-        ai_client = genai.Client(api_key=GEMINI_API_KEY)
-        logging.info("Connected successfully to Google GenAI Client!")
+        ai_client = OpenAI(api_key=OPENAI_API_KEY)
+        logging.info("Connected successfully to OpenAI Client!")
     except Exception as e:
-        logging.error(f"GenAI Init Error: {e}")
+        logging.error(f"OpenAI Init Error: {e}")
 
-# ----------------- FLASK DUMMY SERVER (Keep Alive) -----------------
+# ----------------- FLASK SERVER (Keep Alive) -----------------
 @web_app.route('/')
 def root():
-    return "⚡ J.A.R.V.I.S. Core Online & Operational", 200
+    return "⚡ J.A.R.V.I.S. ChatGPT Engine Online", 200
 
 def run_flask():
     port = int(os.environ.get('PORT', 10000))
@@ -54,10 +54,10 @@ def start_cmd(message):
         InlineKeyboardButton("🎧 Support Status", callback_data="supp_info")
     )
     welcome_text = (
-        "🤖 **J.A.R.V.I.S. ALL-IN-ONE SYSTEM ACTIVE**\n"
+        "🤖 **J.A.R.V.I.S. CHATGPT ENGINE ACTIVE**\n"
         "━━━━━━━━━━━━━━━━━━━━━━\n"
-        "Good day, Sir! I am J.A.R.V.I.S., your personal AI assistant, support engine, and system monitor.\n\n"
-        "💡 *How can I assist you today? Just send me a message!*"
+        "Good day, Sir! Powered by ChatGPT API, fully online.\n\n"
+        "💡 *How can I assist you today? Send me any message!*"
     )
     jarvis.reply_to(message, welcome_text, parse_mode="Markdown", reply_markup=markup)
 
@@ -72,48 +72,46 @@ def sysinfo_cmd(message):
         f"⚙️ **CPU Load:** `{cpu}%`\n"
         f"🧠 **RAM Usage:** `{ram}%`\n"
         f"🌐 **Server State:** `Operational`\n"
-        f"🤖 **AI Engine:** `Online (Gemini)`"
+        f"🤖 **AI Engine:** `Online (ChatGPT GPT-4o-mini)`"
     )
     jarvis.reply_to(message, info, parse_mode="Markdown")
 
-# ----------------- AI CHAT HANDLER -----------------
+# ----------------- CHATGPT AI CHAT HANDLER -----------------
 @jarvis.message_handler(func=lambda message: True)
 def handle_ai_chat(message):
     user_text = message.text.lower()
     
-    # Fast local commands
     if "status" in user_text or "sysinfo" in user_text:
         if is_boss(message):
             sysinfo_cmd(message)
             return
 
-    # Gemini AI Processing
     if ai_client:
         try:
             jarvis.send_chat_action(message.chat.id, 'typing')
             
-            prompt = (
+            system_prompt = (
                 "You are J.A.R.V.I.S., a polite, smart, and witty AI assistant created for Tony Stark (the user). "
                 "Respond concisely in character ('Sir', 'At your service'). "
-                "Help with technical questions, code, support queries, and general chat in natural Hinglish or English.\n\n"
-                f"User: {message.text}"
+                "Help with technical questions, code, support queries, and general chat in natural Hinglish or English."
             )
             
-            response = ai_client.models.generate_content(
-                model='gemini-2.5-flash',
-                contents=prompt,
+            response = ai_client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": message.text}
+                ]
             )
             
-            if response and response.text:
-                jarvis.reply_to(message, response.text, parse_mode="Markdown")
-            else:
-                jarvis.reply_to(message, "Sir, my neural network is cooling down. Please retry shortly.", parse_mode="Markdown")
+            ai_reply = response.choices[0].message.content
+            jarvis.reply_to(message, ai_reply, parse_mode="Markdown")
                 
         except Exception as e:
-            logging.error(f"AI Error: {e}")
-            jarvis.reply_to(message, f"Sir, neural error: `{e}`", parse_mode="Markdown")
+            logging.error(f"OpenAI Error: {e}")
+            jarvis.reply_to(message, f"Sir, neural network error: `{e}`", parse_mode="Markdown")
     else:
-        jarvis.reply_to(message, "Sir, `GEMINI_API_KEY` is not set in Environment Variables.")
+        jarvis.reply_to(message, "Sir, `OPENAI_API_KEY` is not set in Environment Variables.")
 
 # ----------------- CALLBACK BUTTONS -----------------
 @jarvis.callback_query_handler(func=lambda call: True)
@@ -126,10 +124,11 @@ def callback_handler(call):
         else:
             jarvis.answer_callback_query(call.id, "Access restricted to Boss.", show_alert=True)
     elif call.data == "supp_info":
-        jarvis.answer_callback_query(call.id, "J.A.R.V.I.S. Support Engine is fully online!", show_alert=True)
+        jarvis.answer_callback_query(call.id, "J.A.R.V.I.S. ChatGPT Engine is fully operational!", show_alert=True)
 
 # ----------------- MAIN RUNNER -----------------
 if __name__ == "__main__":
     threading.Thread(target=run_flask, daemon=True).start()
-    logging.info("J.A.R.V.I.S. Core Engine Initialized...")
+    logging.info("J.A.R.V.I.S. ChatGPT Engine Initialized...")
     jarvis.infinity_polling()
+    
