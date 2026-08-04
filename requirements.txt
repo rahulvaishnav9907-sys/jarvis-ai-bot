@@ -1,0 +1,6 @@
+pyTelegramBotAPI
+requests
+flask
+psutil
+google-genai
+
