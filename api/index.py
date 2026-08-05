@@ -52,8 +52,9 @@ def handle_ai_chat(message):
     if GEMINI_API_KEY:
         try:
             bot.send_chat_action(message.chat.id, 'typing')
-            model = genai.GenerativeModel('gemini-2.5-flash')
             
+            # Updated to current stable model endpoint
+            model = genai.GenerativeModel('gemini-1.5-flash-latest')
             
             prompt = (
                 "You are J.A.R.V.I.S., a polite, smart, and witty AI assistant created for Tony Stark (the user). "
@@ -71,4 +72,4 @@ def handle_ai_chat(message):
             bot.reply_to(message, f"Sir, error encountered: `{e}`", parse_mode="Markdown")
     else:
         bot.reply_to(message, "Sir, `GEMINI_API_KEY` is not set.")
-  
+    
