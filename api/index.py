@@ -52,7 +52,8 @@ def handle_ai_chat(message):
     if GEMINI_API_KEY:
         try:
             bot.send_chat_action(message.chat.id, 'typing')
-            model = genai.GenerativeModel('gemini-1.5-flash')
+            model = genai.GenerativeModel('gemini-2.5-flash')
+            
             
             prompt = (
                 "You are J.A.R.V.I.S., a polite, smart, and witty AI assistant created for Tony Stark (the user). "
