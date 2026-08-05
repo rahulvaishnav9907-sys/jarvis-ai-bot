@@ -1,5 +1,3 @@
 pyTelegramBotAPI
-requests
 flask
-psutil
-google-genai
+google-generativeai
