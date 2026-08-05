@@ -2,7 +2,7 @@ import os
 import logging
 from flask import Flask, request
 import telebot
-import google.generativeai as genai
+from google import genai
 
 logging.basicConfig(level=logging.INFO)
 
@@ -18,9 +18,8 @@ except ValueError:
 bot = telebot.TeleBot(BOT_TOKEN, threaded=False)
 app = Flask(__name__)
 
-# Configure Gemini
-if GEMINI_API_KEY:
-    genai.configure(api_key=GEMINI_API_KEY)
+# Configure New Google GenAI Client
+client = genai.Client(api_key=GEMINI_API_KEY) if GEMINI_API_KEY else None
 
 # ----------------- FLASK WEBHOOK ENDPOINT -----------------
 @app.route('/', methods=['GET'])
@@ -49,12 +48,9 @@ def start_cmd(message):
 
 @bot.message_handler(func=lambda message: True)
 def handle_ai_chat(message):
-    if GEMINI_API_KEY:
+    if client:
         try:
             bot.send_chat_action(message.chat.id, 'typing')
-            
-            # Updated to current stable model endpoint
-            model = genai.GenerativeModel('gemini-1.5-flash-latest')
             
             prompt = (
                 "You are J.A.R.V.I.S., a polite, smart, and witty AI assistant created for Tony Stark (the user). "
@@ -63,7 +59,12 @@ def handle_ai_chat(message):
                 f"User: {message.text}"
             )
             
-            response = model.generate_content(prompt)
+            # Latest Google GenAI API Call
+            response = client.models.generate_content(
+                model='gemini-2.5-flash',
+                contents=prompt,
+            )
+            
             if response and response.text:
                 bot.reply_to(message, response.text, parse_mode="Markdown")
             else:
@@ -72,4 +73,3 @@ def handle_ai_chat(message):
             bot.reply_to(message, f"Sir, error encountered: `{e}`", parse_mode="Markdown")
     else:
         bot.reply_to(message, "Sir, `GEMINI_API_KEY` is not set.")
-    
