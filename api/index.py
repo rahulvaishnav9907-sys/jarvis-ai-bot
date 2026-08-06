@@ -14,6 +14,8 @@ BOT_TOKEN = os.environ.get("BOT_TOKEN", "").strip()
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "").strip()
 SUPPORT_BOT_TOKEN = os.environ.get("SUPPORT_BOT_TOKEN", "").strip()
 
+FOOTER = "\n\n⚡ *Powered by - Anime Nation*"
+
 try:
     OWNER_ID = int(os.environ.get("OWNER_ID", "8088024998"))
 except ValueError:
@@ -21,7 +23,6 @@ except ValueError:
 
 bot = telebot.TeleBot(BOT_TOKEN, threaded=False)
 
-# File to keep track of joined groups & channels
 DATA_FILE = "chats.json"
 
 def load_chats():
@@ -47,7 +48,8 @@ def register_chat(chat_id):
         active_chats.add(chat_id)
         save_chats(active_chats)
 
-def get_groq_response(prompt_text):
+# System prompt me user ka Telegram name pass karne ke liye update
+def get_groq_response(prompt_text, user_name="Sir"):
     if not GROQ_API_KEY:
         return "Sir, GROQ_API_KEY environment variable mein missing hai."
     
@@ -61,7 +63,7 @@ def get_groq_response(prompt_text):
         "messages": [
             {
                 "role": "system",
-                "content": "You are J.A.R.V.I.S., a polite, smart, and witty AI assistant created for Tony Stark. Respond concisely in character."
+                "content": f"You are J.A.R.V.I.S., an intelligent and witty AI assistant. Always address the user by their name '{user_name}' instead of Mr. Stark. Respond concisely in character."
             },
             {"role": "user", "content": prompt_text}
         ],
@@ -75,7 +77,6 @@ def get_groq_response(prompt_text):
         logging.error(f"Groq API Error: {e}")
     return "Sir, core intelligence access karte waqt problem hui hai."
 
-# Automatic Registration when Bot joins/messages in Group or Channel
 @bot.my_chat_member_handler()
 def track_chats(message):
     register_chat(message.chat.id)
@@ -83,53 +84,53 @@ def track_chats(message):
 @bot.message_handler(commands=['start', 'help'])
 def start_cmd(message):
     register_chat(message.chat.id)
+    user_name = message.from_user.first_name or "User"
     welcome_text = (
-        "🤖 **J.A.R.V.I.S. ONLINE (Render Active)**\n"
-        "━━━━━━━━━━━━━━━━━━━━━━\n"
-        "Good day, Sir! All systems operational.\n\n"
-        "📊 **Commands:**\n"
-        "• `/support_status` : Support Bot status check\n"
-        "• `/v <message>` : Voice mode chat (Deep Voice)\n"
-        "• `/broadcast <msg>` : Mass broadcast to all chats (Boss Only)\n"
-        "• `/owner` : Owner Access Check"
+        f"🤖 **J.A.R.V.I.S. ONLINE (Render Active)**\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"Good day, {user_name}! All systems operational.\n\n"
+        f"📊 **Commands:**\n"
+        f"• `/support_status` : Support Bot status check\n"
+        f"• `/v <message>` : Voice mode chat (Deep Voice)\n"
+        f"• `/broadcast <msg>` : Mass broadcast to all chats\n"
+        f"• `/owner` : Owner Access Check"
+        f"{FOOTER}"
     )
     bot.reply_to(message, welcome_text, parse_mode="Markdown")
 
-# 📢 SYSTEM 6: GLOBAL GROUP & CHANNEL BROADCAST
 @bot.message_handler(commands=['broadcast'])
 def broadcast_cmd(message):
     if message.from_user.id != OWNER_ID:
-        bot.reply_to(message, "⚠️ Access Denied: Sirf Boss hi broadcast kar sakte hain.")
+        bot.reply_to(message, f"⚠️ Access Denied: Sirf Boss hi broadcast kar sakte hain.{FOOTER}", parse_mode="Markdown")
         return
 
     broadcast_msg = message.text.replace('/broadcast', '').strip()
     if not broadcast_msg:
-        bot.reply_to(message, "⚠️ Command format: `/broadcast Aapka Message Here`", parse_mode="Markdown")
+        bot.reply_to(message, f"⚠️ Command format: `/broadcast Aapka Message Here`{FOOTER}", parse_mode="Markdown")
         return
 
     bot.reply_to(message, "📢 *Initiating Global Broadcast across all Groups & Channels...*", parse_mode="Markdown")
     
     success = 0
     failed = 0
-    failed_chats = []
 
     for chat_id in list(active_chats):
         try:
             bot.send_message(
                 chat_id, 
-                f"📢 **J.A.R.V.I.S. BROADCAST ANNOUNCEMENT**\n━━━━━━━━━━━━━━━━━━━━━━\n\n{broadcast_msg}",
+                f"📢 **J.A.R.V.I.S. BROADCAST ANNOUNCEMENT**\n━━━━━━━━━━━━━━━━━━━━━━\n\n{broadcast_msg}{FOOTER}",
                 parse_mode="Markdown"
             )
             success += 1
-        except Exception as e:
+        except Exception:
             failed += 1
-            failed_chats.append(chat_id)
 
     report = (
         f"📊 **BROADCAST REPORT COMPLETE**\n"
         f"━━━━━━━━━━━━━━━━━━━━━━\n"
         f"🟢 **Successfully Delivered:** `{success}` chats\n"
         f"🔴 **Failed / Removed:** `{failed}` chats"
+        f"{FOOTER}"
     )
     bot.reply_to(message, report, parse_mode="Markdown")
 
@@ -137,7 +138,7 @@ def broadcast_cmd(message):
 def check_support_status(message):
     register_chat(message.chat.id)
     if not SUPPORT_BOT_TOKEN:
-        bot.reply_to(message, "⚠️ Sir, `SUPPORT_BOT_TOKEN` set nahi hai.", parse_mode="Markdown")
+        bot.reply_to(message, f"⚠️ Sir, `SUPPORT_BOT_TOKEN` set nahi hai.{FOOTER}", parse_mode="Markdown")
         return
 
     bot.reply_to(message, "🔍 *Pinging Support Bot system...*", parse_mode="Markdown")
@@ -150,35 +151,37 @@ def check_support_status(message):
             bot_username = res["result"]["username"]
             bot.reply_to(
                 message,
-                f"🟢 **SUPPORT BOT IS ONLINE!**\n\n• **Name:** {bot_name}\n• **Username:** @{bot_username}",
+                f"🟢 **SUPPORT BOT IS ONLINE!**\n\n• **Name:** {bot_name}\n• **Username:** @{bot_username}{FOOTER}",
                 parse_mode="Markdown"
             )
         else:
-            bot.send_message(OWNER_ID, "🚨 **ALERT: SUPPORT BOT IS OFFLINE!**", parse_mode="Markdown")
-            bot.reply_to(message, "🔴 **SUPPORT BOT IS OFFLINE!** Alert sent to Owner.", parse_mode="Markdown")
+            bot.send_message(OWNER_ID, f"🚨 **ALERT: SUPPORT BOT IS OFFLINE!**{FOOTER}", parse_mode="Markdown")
+            bot.reply_to(message, f"🔴 **SUPPORT BOT IS OFFLINE!** Alert sent to Owner.{FOOTER}", parse_mode="Markdown")
     except Exception as e:
-        bot.send_message(OWNER_ID, f"🚨 **ALERT: UNREACHABLE!**\nError: `{e}`", parse_mode="Markdown")
-        bot.reply_to(message, f"🔴 **SUPPORT BOT UNREACHABLE!**\nError: `{e}`", parse_mode="Markdown")
+        bot.send_message(OWNER_ID, f"🚨 **ALERT: UNREACHABLE!**\nError: `{e}`{FOOTER}", parse_mode="Markdown")
+        bot.reply_to(message, f"🔴 **SUPPORT BOT UNREACHABLE!**\nError: `{e}`{FOOTER}", parse_mode="Markdown")
 
 @bot.message_handler(commands=['owner'])
 def owner_cmd(message):
     register_chat(message.chat.id)
+    user_name = message.from_user.first_name or "User"
     if message.from_user.id == OWNER_ID:
-        bot.reply_to(message, "👑 **Boss Access Confirmed.**", parse_mode="Markdown")
+        bot.reply_to(message, f"👑 **Boss Access Confirmed.** Welcome back, {user_name}!{FOOTER}", parse_mode="Markdown")
     else:
-        bot.reply_to(message, "Restricted to Boss.")
+        bot.reply_to(message, f"Restricted to Boss.{FOOTER}")
 
 @bot.message_handler(commands=['v', 'voice'])
 def handle_voice_chat(message):
     register_chat(message.chat.id)
+    user_name = message.from_user.first_name or "User"
     user_query = message.text.replace('/voice', '').replace('/v', '').strip()
     if not user_query:
-        bot.reply_to(message, "Please query likhein voice mode ke liye.", parse_mode="Markdown")
+        bot.reply_to(message, f"Please query likhein voice mode ke liye.{FOOTER}", parse_mode="Markdown")
         return
 
     try:
         bot.send_chat_action(message.chat.id, 'record_audio')
-        ai_reply = get_groq_response(user_query)
+        ai_reply = get_groq_response(user_query, user_name=user_name)
         clean_text = ai_reply.replace('*', '').replace('#', '').replace('`', '')
         
         audio_file = "voice_reply.mp3"
@@ -198,22 +201,29 @@ def handle_voice_chat(message):
             bot.send_voice(
                 message.chat.id, 
                 voice=voice, 
-                caption=f"🎙️ **J.A.R.V.I.S. (Deep Voice):**\n\n{ai_reply}", 
+                caption=f"🎙️ **J.A.R.V.I.S. (Deep Voice):**\n\n{ai_reply}{FOOTER}", 
                 parse_mode="Markdown"
             )
 
     except Exception as e:
-        bot.reply_to(message, f"Voice Error: `{e}`", parse_mode="Markdown")
+        bot.reply_to(message, f"Voice Error: `{e}`{FOOTER}", parse_mode="Markdown")
 
 @bot.message_handler(func=lambda message: True)
 def handle_ai_chat(message):
     register_chat(message.chat.id)
+    user_name = message.from_user.first_name or "User"
+    
+    # Strip command prefix if any unknown command was sent
+    clean_prompt = message.text
+    if clean_prompt.startswith('/'):
+        clean_prompt = clean_prompt.split(' ', 1)[-1]
+
     try:
         bot.send_chat_action(message.chat.id, 'typing')
-        ai_reply = get_groq_response(message.text)
-        bot.reply_to(message, ai_reply, parse_mode="Markdown")
+        ai_reply = get_groq_response(clean_prompt, user_name=user_name)
+        bot.reply_to(message, f"{ai_reply}{FOOTER}", parse_mode="Markdown")
     except Exception as e:
-        bot.reply_to(message, f"Error: `{e}`", parse_mode="Markdown")
+        bot.reply_to(message, f"Error: `{e}`{FOOTER}", parse_mode="Markdown")
 
 if __name__ == "__main__":
     logging.info("Starting J.A.R.V.I.S. via Long Polling...")
@@ -223,4 +233,3 @@ if __name__ == "__main__":
         logging.warning(f"Webhook cleanup note: {e}")
         
     bot.infinity_polling(timeout=10, long_polling_timeout=5, allowed_updates=['message', 'my_chat_member'])
-    
