@@ -18,12 +18,6 @@ except ValueError:
 
 bot = telebot.TeleBot(BOT_TOKEN, threaded=False)
 
-# Webhook clear kar rahe hain taaki Long Polling activate ho sake
-try:
-    bot.remove_webhook()
-except Exception as e:
-    logging.info(f"Webhook removal note: {e}")
-
 def get_groq_response(prompt_text):
     if not GROQ_API_KEY:
         return "Sir, GROQ_API_KEY environment variable mein missing hai."
@@ -55,7 +49,7 @@ def get_groq_response(prompt_text):
 @bot.message_handler(commands=['start', 'help'])
 def start_cmd(message):
     welcome_text = (
-        "🤖 **J.A.R.V.I.S. ONLINE (Render Service)**\n"
+        "🤖 **J.A.R.V.I.S. ONLINE (Render Active)**\n"
         "━━━━━━━━━━━━━━━━━━━━━━\n"
         "Good day, Sir! All systems operational.\n\n"
         "📊 **Commands:**\n"
@@ -127,5 +121,11 @@ def handle_ai_chat(message):
 
 if __name__ == "__main__":
     logging.info("Starting J.A.R.V.I.S. via Long Polling...")
-    bot.infinity_polling(skip_pending=True)
+    try:
+        # Conflict Error 409 se bachne ke liye purana webhook aur pending updates delete karein
+        bot.delete_webhook(drop_pending_updates=True)
+    except Exception as e:
+        logging.warning(f"Webhook cleanup error: {e}")
+        
+    bot.infinity_polling(timeout=10, long_polling_timeout=5)
     
