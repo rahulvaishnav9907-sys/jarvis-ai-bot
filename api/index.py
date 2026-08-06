@@ -1,4 +1,5 @@
 import os
+import json
 import logging
 import urllib.parse
 import asyncio
@@ -18,8 +19,33 @@ try:
 except ValueError:
     OWNER_ID = 8088024998
 
-# Bot instance creation (Isi line ki vajah se NameError aaya tha)
 bot = telebot.TeleBot(BOT_TOKEN, threaded=False)
+
+# File to keep track of joined groups & channels
+DATA_FILE = "chats.json"
+
+def load_chats():
+    if os.path.exists(DATA_FILE):
+        try:
+            with open(DATA_FILE, "r") as f:
+                return set(json.load(f))
+        except Exception:
+            return set()
+    return set()
+
+def save_chats(chats):
+    try:
+        with open(DATA_FILE, "w") as f:
+            json.dump(list(chats), f)
+    except Exception as e:
+        logging.error(f"Error saving chats: {e}")
+
+active_chats = load_chats()
+
+def register_chat(chat_id):
+    if chat_id not in active_chats:
+        active_chats.add(chat_id)
+        save_chats(active_chats)
 
 def get_groq_response(prompt_text):
     if not GROQ_API_KEY:
@@ -49,8 +75,14 @@ def get_groq_response(prompt_text):
         logging.error(f"Groq API Error: {e}")
     return "Sir, core intelligence access karte waqt problem hui hai."
 
+# Automatic Registration when Bot joins/messages in Group or Channel
+@bot.my_chat_member_handler()
+def track_chats(message):
+    register_chat(message.chat.id)
+
 @bot.message_handler(commands=['start', 'help'])
 def start_cmd(message):
+    register_chat(message.chat.id)
     welcome_text = (
         "🤖 **J.A.R.V.I.S. ONLINE (Render Active)**\n"
         "━━━━━━━━━━━━━━━━━━━━━━\n"
@@ -58,12 +90,52 @@ def start_cmd(message):
         "📊 **Commands:**\n"
         "• `/support_status` : Support Bot status check\n"
         "• `/v <message>` : Voice mode chat (Deep Voice)\n"
+        "• `/broadcast <msg>` : Mass broadcast to all chats (Boss Only)\n"
         "• `/owner` : Owner Access Check"
     )
     bot.reply_to(message, welcome_text, parse_mode="Markdown")
 
+# 📢 SYSTEM 6: GLOBAL GROUP & CHANNEL BROADCAST
+@bot.message_handler(commands=['broadcast'])
+def broadcast_cmd(message):
+    if message.from_user.id != OWNER_ID:
+        bot.reply_to(message, "⚠️ Access Denied: Sirf Boss hi broadcast kar sakte hain.")
+        return
+
+    broadcast_msg = message.text.replace('/broadcast', '').strip()
+    if not broadcast_msg:
+        bot.reply_to(message, "⚠️ Command format: `/broadcast Aapka Message Here`", parse_mode="Markdown")
+        return
+
+    bot.reply_to(message, "📢 *Initiating Global Broadcast across all Groups & Channels...*", parse_mode="Markdown")
+    
+    success = 0
+    failed = 0
+    failed_chats = []
+
+    for chat_id in list(active_chats):
+        try:
+            bot.send_message(
+                chat_id, 
+                f"📢 **J.A.R.V.I.S. BROADCAST ANNOUNCEMENT**\n━━━━━━━━━━━━━━━━━━━━━━\n\n{broadcast_msg}",
+                parse_mode="Markdown"
+            )
+            success += 1
+        except Exception as e:
+            failed += 1
+            failed_chats.append(chat_id)
+
+    report = (
+        f"📊 **BROADCAST REPORT COMPLETE**\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"🟢 **Successfully Delivered:** `{success}` chats\n"
+        f"🔴 **Failed / Removed:** `{failed}` chats"
+    )
+    bot.reply_to(message, report, parse_mode="Markdown")
+
 @bot.message_handler(commands=['support_status'])
 def check_support_status(message):
+    register_chat(message.chat.id)
     if not SUPPORT_BOT_TOKEN:
         bot.reply_to(message, "⚠️ Sir, `SUPPORT_BOT_TOKEN` set nahi hai.", parse_mode="Markdown")
         return
@@ -90,6 +162,7 @@ def check_support_status(message):
 
 @bot.message_handler(commands=['owner'])
 def owner_cmd(message):
+    register_chat(message.chat.id)
     if message.from_user.id == OWNER_ID:
         bot.reply_to(message, "👑 **Boss Access Confirmed.**", parse_mode="Markdown")
     else:
@@ -97,6 +170,7 @@ def owner_cmd(message):
 
 @bot.message_handler(commands=['v', 'voice'])
 def handle_voice_chat(message):
+    register_chat(message.chat.id)
     user_query = message.text.replace('/voice', '').replace('/v', '').strip()
     if not user_query:
         bot.reply_to(message, "Please query likhein voice mode ke liye.", parse_mode="Markdown")
@@ -104,14 +178,11 @@ def handle_voice_chat(message):
 
     try:
         bot.send_chat_action(message.chat.id, 'record_audio')
-        
-        # Groq AI Response
         ai_reply = get_groq_response(user_query)
         clean_text = ai_reply.replace('*', '').replace('#', '').replace('`', '')
         
         audio_file = "voice_reply.mp3"
         
-        # Edge TTS Async Generation (Thanos Style Deep Male Voice)
         async def generate_tts():
             communicate = edge_tts.Communicate(
                 clean_text, 
@@ -136,6 +207,7 @@ def handle_voice_chat(message):
 
 @bot.message_handler(func=lambda message: True)
 def handle_ai_chat(message):
+    register_chat(message.chat.id)
     try:
         bot.send_chat_action(message.chat.id, 'typing')
         ai_reply = get_groq_response(message.text)
@@ -150,5 +222,5 @@ if __name__ == "__main__":
     except Exception as e:
         logging.warning(f"Webhook cleanup note: {e}")
         
-    bot.infinity_polling(timeout=10, long_polling_timeout=5)
-            
+    bot.infinity_polling(timeout=10, long_polling_timeout=5, allowed_updates=['message', 'my_chat_member'])
+    
