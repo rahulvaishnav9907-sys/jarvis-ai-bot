@@ -153,7 +153,8 @@ def handle_voice_chat(message):
         
         # Deep Crystal Clear Speech REST API
         encoded_text = urllib.parse.quote(clean_text)
-        voice_url = f"https://translate.google.com/translate_tts?ie=UTF-8&q={encoded_text}&tl=en-uk&client=tw-ob"
+        voice_url = f"https://dict.youdao.com/dictvoice?audio={encoded_text}&type=2"
+        "
         
         bot.send_voice(
             message.chat.id,
