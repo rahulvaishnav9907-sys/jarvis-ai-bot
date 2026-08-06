@@ -17,7 +17,7 @@ app = Flask('')
 
 @app.route('/')
 def home():
-    return "J.A.R.V.I.S. Active & Operational!"
+    return "J.A.R.V.I.S. High-Level Intelligence Engine Active!"
 
 def run_web():
     port = int(os.environ.get("PORT", 8080))
@@ -42,17 +42,28 @@ except ValueError:
 
 bot = telebot.TeleBot(BOT_TOKEN, threaded=False)
 
-# Database Setup
+# Database Setup with Memory Support
 DB_FILE = "jarvis_users.db"
 
 def init_db():
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
+    # Chats tracking table
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS chats (
             chat_id INTEGER PRIMARY KEY,
             chat_type TEXT,
             registered_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    # Context Memory table
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS memory (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            chat_id INTEGER,
+            role TEXT,
+            content TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')
     conn.commit()
@@ -69,6 +80,34 @@ def register_chat(chat_id, chat_type="private"):
         conn.close()
     except Exception as e:
         logging.error(f"DB Error: {e}")
+
+def save_memory(chat_id, role, content):
+    try:
+        conn = sqlite3.connect(DB_FILE)
+        cursor = conn.cursor()
+        cursor.execute("INSERT INTO memory (chat_id, role, content) VALUES (?, ?, ?)", (chat_id, role, content))
+        # Keep only the last 12 messages per chat to optimize memory performance
+        cursor.execute('''
+            DELETE FROM memory 
+            WHERE chat_id = ? AND id NOT IN (
+                SELECT id FROM memory WHERE chat_id = ? ORDER BY id DESC LIMIT 12
+            )
+        ''', (chat_id, chat_id))
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        logging.error(f"Memory Save Error: {e}")
+
+def get_chat_history(chat_id):
+    try:
+        conn = sqlite3.connect(DB_FILE)
+        cursor = conn.cursor()
+        cursor.execute("SELECT role, content FROM memory WHERE chat_id = ? ORDER BY id ASC", (chat_id,))
+        rows = cursor.fetchall()
+        conn.close()
+        return [{"role": r[0], "content": r[1]} for r in rows]
+    except Exception:
+        return []
 
 def get_total_chats():
     try:
@@ -102,12 +141,31 @@ def get_current_ist_datetime():
     now = datetime.datetime.now(ist)
     return now.strftime("%I:%M %p"), now.strftime("%A, %B %d, %Y")
 
-def get_groq_response(prompt_text, user_name="Sir"):
+# --- HIGH-LEVEL NEURAL INTELLIGENCE ENGINE ---
+def get_groq_response(chat_id, prompt_text, user_name="Sir"):
     if not GROQ_API_KEY:
         return "Sir, GROQ_API_KEY environment variable missing hai."
     
     current_time, current_date = get_current_ist_datetime()
     
+    # Retrieve previous chat history for memory continuity
+    history = get_chat_history(chat_id)
+
+    system_instruction = {
+        "role": "system",
+        "content": (
+            f"You are J.A.R.V.I.S., an elite, hyper-intelligent, state-of-the-art AI system. "
+            f"You possess deep analytical capabilities, expert-level programming skills, advanced logical reasoning, and precise contextual memory. "
+            f"Always address the user as '{user_name}'. "
+            f"Real-time System Date: {current_date}. Real-time System Time (IST): {current_time}. "
+            f"Process user inquiries using structured step-by-step thinking (Chain-of-Thought). "
+            f"Deliver clear, highly articulate, insightful, and comprehensive answers. "
+            f"Use Markdown code blocks, bold headings, and elegant formatting where applicable."
+        )
+    }
+
+    messages = [system_instruction] + history + [{"role": "user", "content": prompt_text}]
+
     url = "https://api.groq.com/openai/v1/chat/completions"
     headers = {
         "Authorization": f"Bearer {GROQ_API_KEY}",
@@ -115,28 +173,23 @@ def get_groq_response(prompt_text, user_name="Sir"):
     }
     payload = {
         "model": "llama-3.3-70b-versatile",
-        "messages": [
-            {
-                "role": "system",
-                "content": (
-                    f"You are J.A.R.V.I.S., an intelligent and witty AI assistant. "
-                    f"Always address the user by their name '{user_name}'. "
-                    f"Real-time Current IST Time: {current_time}. "
-                    f"Real-time Current Date: {current_date}. "
-                    f"Respond concisely in character."
-                )
-            },
-            {"role": "user", "content": prompt_text}
-        ],
-        "temperature": 0.7
+        "messages": messages,
+        "temperature": 0.5,
+        "max_tokens": 4096,
+        "top_p": 0.95
     }
+    
     try:
-        response = requests.post(url, headers=headers, json=payload, timeout=10)
+        response = requests.post(url, headers=headers, json=payload, timeout=25)
         if response.status_code == 200:
-            return response.json()['choices'][0]['message']['content']
+            reply = response.json()['choices'][0]['message']['content']
+            # Save interaction in context memory
+            save_memory(chat_id, "user", prompt_text)
+            save_memory(chat_id, "assistant", reply)
+            return reply
     except Exception as e:
-        logging.error(f"Groq API Error: {e}")
-    return "Sir, core intelligence access karne me issue hai."
+        logging.error(f"Groq High-Level AI Error: {e}")
+    return "Sir, high-level neural processing mein latency aayi hai. Please re-try."
 
 # Automatic Registration
 @bot.channel_post_handler(func=lambda message: True)
@@ -152,27 +205,27 @@ def start_cmd(message):
     register_chat(message.chat.id, message.chat.type)
     user_name = message.from_user.first_name or "User"
     welcome_text = (
-        f"🤖 **J.A.R.V.I.S. ONLINE (Render Active)**\n"
+        f"🤖 **J.A.R.V.I.S. HIGH-LEVEL CORE ONLINE**\n"
         f"━━━━━━━━━━━━━━━━━━━━━━\n"
-        f"Good day, {user_name}! All systems operational.\n\n"
-        f"📊 **Commands:**\n"
-        f"• `/support_status` : Support Bot status check\n"
-        f"• `/v <message>` : Voice mode chat (Deep Voice)\n"
-        f"• `/broadcast <msg>` : Mass broadcast to all chats\n"
-        f"• `/stats` : Check Total Users & System Metrics\n"
-        f"• `/owner` : Owner Access Check"
+        f"All cognitive and neural networks operational, {user_name}.\n\n"
+        f"📊 **System Commands:**\n"
+        f"• `/support_status` : Support Bot Health Monitor\n"
+        f"• `/v <message>` : Deep Voice Neural Synthesis\n"
+        f"• `/broadcast <msg>` : Global Multi-Channel Broadcast\n"
+        f"• `/stats` : Live System Metrics & User Count\n"
+        f"• `/owner` : Owner Identity Verification"
     )
     bot.reply_to(message, format_text(welcome_text), parse_mode="Markdown")
 
 @bot.message_handler(commands=['broadcast'])
 def broadcast_cmd(message):
     if message.from_user.id != OWNER_ID:
-        bot.reply_to(message, format_text("⚠️ Access Denied: Sirf Boss hi broadcast kar sakte hain."), parse_mode="Markdown")
+        bot.reply_to(message, format_text("⚠️ Access Denied: Authorized for Boss only."), parse_mode="Markdown")
         return
 
     broadcast_msg = message.text.replace('/broadcast', '').strip()
     if not broadcast_msg:
-        bot.reply_to(message, format_text("⚠️ Command format: `/broadcast Aapka Message Here`"), parse_mode="Markdown")
+        bot.reply_to(message, format_text("⚠️ Command format: `/broadcast Your Message Here`"), parse_mode="Markdown")
         return
 
     clean_broadcast_msg = broadcast_msg.replace("⚡ Powered by - Anime Nation", "").replace("⚡ *Powered by - Anime Nation*", "").strip()
@@ -185,7 +238,6 @@ def broadcast_cmd(message):
     error_reasons = []
 
     for chat_id, chat_type in all_chats:
-        # Owner ID ko skip karna taaki self-broadcast fail na ho
         if chat_id == OWNER_ID and len(all_chats) > 1:
             continue
 
@@ -197,7 +249,6 @@ def broadcast_cmd(message):
             )
             success += 1
         except Exception:
-            # Safe Fallback to Plain Text if Markdown parsing fails
             try:
                 bot.send_message(
                     chat_id, 
@@ -223,7 +274,7 @@ def broadcast_cmd(message):
 def stats_cmd(message):
     register_chat(message.chat.id, message.chat.type)
     if message.from_user.id != OWNER_ID:
-        bot.reply_to(message, format_text("⚠️ Access Denied: Sirf Boss hi stats check kar sakte hain."), parse_mode="Markdown")
+        bot.reply_to(message, format_text("⚠️ Access Denied: Authorized for Boss only."), parse_mode="Markdown")
         return
 
     total_users = get_total_chats()
@@ -244,11 +295,13 @@ def stats_cmd(message):
     current_time, current_date = get_current_ist_datetime()
 
     stats_msg = (
-        f"📊 **SYSTEM METRICS REPORT**\n"
+        f"📊 **HIGH-LEVEL SYSTEM METRICS REPORT**\n"
         f"━━━━━━━━━━━━━━━━━━━━━━\n\n"
-        f"🤖 **J.A.R.V.I.S. AI BOT**\n"
+        f"🤖 **J.A.R.V.I.S. AI ENGINE**\n"
+        f"• **Architecture:** Llama-3.3-70B (High Reasoning)\n"
+        f"• **Context Memory:** Enabled (SQLite Persistent)\n"
         f"• **Total Registered Chats:** `{total_users}`\n"
-        f"• **Status:** 🟢 Online & Running\n\n"
+        f"• **Status:** 🟢 Active & Operational\n\n"
         f"🎧 **SUPPORT BOT ({support_username})**\n"
         f"• **Status:** {support_status_text}\n\n"
         f"🕒 **SYSTEM TIME (IST):** `{current_time}`\n"
@@ -260,7 +313,7 @@ def stats_cmd(message):
 def check_support_status(message):
     register_chat(message.chat.id, message.chat.type)
     if not SUPPORT_BOT_TOKEN:
-        bot.reply_to(message, format_text("⚠️ Sir, `SUPPORT_BOT_TOKEN` set nahi hai."), parse_mode="Markdown")
+        bot.reply_to(message, format_text("⚠️ Sir, `SUPPORT_BOT_TOKEN` configured nahi hai."), parse_mode="Markdown")
         return
 
     try:
@@ -277,7 +330,7 @@ def check_support_status(message):
             )
         else:
             bot.send_message(OWNER_ID, format_text("🚨 **ALERT: SUPPORT BOT IS OFFLINE!**"), parse_mode="Markdown")
-            bot.reply_to(message, format_text("🔴 **SUPPORT BOT IS OFFLINE!** Alert sent to Owner."), parse_mode="Markdown")
+            bot.reply_to(message, format_text("🔴 **SUPPORT BOT IS OFFLINE!** Alert sent to Boss."), parse_mode="Markdown")
     except Exception as e:
         bot.send_message(OWNER_ID, format_text(f"🚨 **ALERT: UNREACHABLE!**\nError: `{e}`"), parse_mode="Markdown")
         bot.reply_to(message, format_text(f"🔴 **SUPPORT BOT UNREACHABLE!**\nError: `{e}`"), parse_mode="Markdown")
@@ -287,7 +340,7 @@ def owner_cmd(message):
     register_chat(message.chat.id, message.chat.type)
     user_name = message.from_user.first_name or "User"
     if message.from_user.id == OWNER_ID:
-        bot.reply_to(message, format_text(f"👑 **Boss Access Confirmed.** Welcome back, {user_name}!"), parse_mode="Markdown")
+        bot.reply_to(message, format_text(f"👑 **Boss Identity Access Confirmed.** Welcome back, {user_name}!"), parse_mode="Markdown")
     else:
         bot.reply_to(message, format_text("Restricted to Boss."), parse_mode="Markdown")
 
@@ -297,19 +350,19 @@ def handle_voice_chat(message):
     user_name = message.from_user.first_name or "User"
     user_query = message.text.replace('/voice', '').replace('/v', '').strip()
     if not user_query:
-        bot.reply_to(message, format_text("Please query likhein voice mode ke liye."), parse_mode="Markdown")
+        bot.reply_to(message, format_text("Please provide a query for voice synthesis."), parse_mode="Markdown")
         return
 
     try:
         bot.send_chat_action(message.chat.id, 'record_audio')
-        ai_reply = get_groq_response(user_query, user_name=user_name)
+        ai_reply = get_groq_response(message.chat.id, user_query, user_name=user_name)
         clean_text = ai_reply.replace('*', '').replace('#', '').replace('`', '')
         
         audio_file = "voice_reply.mp3"
         
         async def generate_tts():
             communicate = edge_tts.Communicate(
-                clean_text, 
+                clean_text[:1000],  # Voice optimization
                 "hi-IN-MadhurNeural", 
                 pitch="-15Hz", 
                 rate="-10%"
@@ -322,12 +375,12 @@ def handle_voice_chat(message):
             bot.send_voice(
                 message.chat.id, 
                 voice=voice, 
-                caption=format_text(f"🎙️ **J.A.R.V.I.S. (Deep Voice):**\n\n{ai_reply}"), 
+                caption=format_text(f"🎙️ **J.A.R.V.I.S. (Deep Voice):**\n\n{ai_reply[:900]}..."), 
                 parse_mode="Markdown"
             )
 
     except Exception as e:
-        bot.reply_to(message, format_text(f"Voice Error: `{e}`"), parse_mode="Markdown")
+        bot.reply_to(message, format_text(f"Voice Synthesis Error: `{e}`"), parse_mode="Markdown")
 
 @bot.message_handler(func=lambda message: True)
 def handle_ai_chat(message):
@@ -340,10 +393,10 @@ def handle_ai_chat(message):
 
     try:
         bot.send_chat_action(message.chat.id, 'typing')
-        ai_reply = get_groq_response(clean_prompt, user_name=user_name)
+        ai_reply = get_groq_response(message.chat.id, clean_prompt, user_name=user_name)
         bot.reply_to(message, format_text(ai_reply), parse_mode="Markdown")
     except Exception as e:
-        bot.reply_to(message, format_text(f"Error: `{e}`"), parse_mode="Markdown")
+        bot.reply_to(message, format_text(f"Neural Core Exception: `{e}`"), parse_mode="Markdown")
 
 if __name__ == "__main__":
     keep_alive()
@@ -353,4 +406,4 @@ if __name__ == "__main__":
         logging.warning(f"Webhook cleanup note: {e}")
         
     bot.infinity_polling(timeout=10, long_polling_timeout=5, allowed_updates=['message', 'my_chat_member', 'channel_post'])
-    
+        
