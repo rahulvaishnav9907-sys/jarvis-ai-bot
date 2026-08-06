@@ -1,11 +1,14 @@
 import os
 import logging
 import urllib.parse
-from flask import Flask, request
 import requests
 import telebot
+from flask import Flask, request
 
 logging.basicConfig(level=logging.INFO)
+
+# ----------------- FLASK INSTANCE (EXPLICIT TOP-LEVEL) -----------------
+app = Flask(__name__)
 
 # ----------------- CONFIGURATION -----------------
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "").strip()
@@ -18,7 +21,6 @@ except ValueError:
     OWNER_ID = 8088024998
 
 bot = telebot.TeleBot(BOT_TOKEN, threaded=False)
-app = Flask(__name__)
 
 # Helper function for Groq AI
 def get_groq_response(prompt_text):
@@ -38,9 +40,12 @@ def get_groq_response(prompt_text):
         ],
         "temperature": 0.7
     }
-    response = requests.post(url, headers=headers, json=payload, timeout=10)
-    if response.status_code == 200:
-        return response.json()['choices'][0]['message']['content']
+    try:
+        response = requests.post(url, headers=headers, json=payload, timeout=10)
+        if response.status_code == 200:
+            return response.json()['choices'][0]['message']['content']
+    except Exception:
+        pass
     return "Sir, I encountered an issue accessing my core intelligence processors."
 
 # ----------------- FLASK WEBHOOK ENDPOINT -----------------
@@ -99,7 +104,6 @@ def check_support_status(message):
             )
             bot.reply_to(message, report, parse_mode="Markdown")
         else:
-            # Alert to Owner
             alert_text = (
                 "🚨 **J.A.R.V.I.S. SYSTEM ALERT**\n"
                 "━━━━━━━━━━━━━━━━━━━━━━\n"
@@ -148,4 +152,4 @@ def handle_ai_chat(message):
         bot.reply_to(message, ai_reply, parse_mode="Markdown")
     except Exception as e:
         bot.reply_to(message, f"Error: `{e}`", parse_mode="Markdown")
-    
+        
