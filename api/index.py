@@ -54,8 +54,8 @@ def handle_ai_chat(message):
             f"User: {message.text}"
         )
 
-        # Direct REST API endpoint (No SDK dependency, no version errors)
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}"
+        # Gemini 2.5 Flash Endpoint
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={GEMINI_API_KEY}"
         
         payload = {
             "contents": [
@@ -79,4 +79,4 @@ def handle_ai_chat(message):
 
     except Exception as e:
         bot.reply_to(message, f"Sir, error encountered: `{e}`", parse_mode="Markdown")
-    
+            
