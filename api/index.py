@@ -1,8 +1,8 @@
 import os
 import logging
-import requests
 import urllib.parse
 from flask import Flask, request
+import requests
 import telebot
 
 logging.basicConfig(level=logging.INFO)
@@ -10,8 +10,8 @@ logging.basicConfig(level=logging.INFO)
 # ----------------- CONFIGURATION -----------------
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "").strip()
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "").strip()
+SUPPORT_BOT_TOKEN = os.environ.get("SUPPORT_BOT_TOKEN", "").strip()
 
-# Default to your Owner ID
 try:
     OWNER_ID = int(os.environ.get("OWNER_ID", "8088024998"))
 except ValueError:
@@ -20,10 +20,7 @@ except ValueError:
 bot = telebot.TeleBot(BOT_TOKEN, threaded=False)
 app = Flask(__name__)
 
-# Simple memory storage for unique users (Vercel memory lifecycle)
-users_list = set()
-
-# Helper function to get Groq AI Response
+# Helper function for Groq AI
 def get_groq_response(prompt_text):
     url = "https://api.groq.com/openai/v1/chat/completions"
     headers = {
@@ -35,11 +32,7 @@ def get_groq_response(prompt_text):
         "messages": [
             {
                 "role": "system",
-                "content": (
-                    "You are J.A.R.V.I.S., a polite, highly intelligent, and witty AI assistant created for Tony Stark. "
-                    "Respond concisely in character using terms like 'Sir', 'At your service'. "
-                    "Provide clear, crisp, and smart answers in natural Hinglish or English."
-                )
+                "content": "You are J.A.R.V.I.S., a polite, smart, and witty AI assistant created for Tony Stark. Respond concisely in character."
             },
             {"role": "user", "content": prompt_text}
         ],
@@ -53,7 +46,7 @@ def get_groq_response(prompt_text):
 # ----------------- FLASK WEBHOOK ENDPOINT -----------------
 @app.route('/', methods=['GET'])
 def home():
-    return "⚡ J.A.R.V.I.S. Vercel Webhook Active", 200
+    return "⚡ J.A.R.V.I.S. Core & Support Monitor Active", 200
 
 @app.route('/webhook', methods=['POST'])
 def webhook():
@@ -64,120 +57,95 @@ def webhook():
         return "OK", 200
     return "Forbidden", 403
 
-# ----------------- TELEGRAM COMMAND HANDLERS -----------------
+# ----------------- TELEGRAM COMMANDS -----------------
 
 @bot.message_handler(commands=['start', 'help'])
 def start_cmd(message):
-    users_list.add(message.chat.id)
     welcome_text = (
-        "🤖 **J.A.R.V.I.S. ONLINE (Groq & Voice Powered)**\n"
+        "🤖 **J.A.R.V.I.S. ONLINE (Support Bot Monitor)**\n"
         "━━━━━━━━━━━━━━━━━━━━━━\n"
-        "Good day, Sir! All systems operational at maximum performance.\n\n"
-        "⚙️ **Available Controls:**\n"
-        "• Just type any message to chat with me.\n"
-        "• `/v <message>` or `/voice <message>` : Get a **Voice Response** in deep crystal-clear voice.\n\n"
+        "Good day, Sir! All systems operational.\n\n"
+        "📊 **Support Monitoring Commands:**\n"
+        "• `/support_status` : Live status check of your Support Bot.\n"
+        "• `/v <message>` : Deep voice mode chat.\n\n"
         "👑 **Owner Commands:**\n"
-        "• `/owner` : Check Admin Access & Controls.\n"
-        "• `/stats` : System status & active users.\n"
-        "• `/broadcast <text>` : Send announcement to users."
+        "• `/owner` : Check Root Access."
     )
     bot.reply_to(message, welcome_text, parse_mode="Markdown")
+
+@bot.message_handler(commands=['support_status'])
+def check_support_status(message):
+    if not SUPPORT_BOT_TOKEN:
+        bot.reply_to(message, "⚠️ Sir, `SUPPORT_BOT_TOKEN` is not set in Vercel Environment Variables.", parse_mode="Markdown")
+        return
+
+    bot.reply_to(message, "🔍 *Pinging Support Bot system...*", parse_mode="Markdown")
+    
+    try:
+        url = f"https://api.telegram.org/bot{SUPPORT_BOT_TOKEN}/getMe"
+        res = requests.get(url, timeout=5).json()
+
+        if res.get("ok"):
+            bot_name = res["result"]["first_name"]
+            bot_username = res["result"]["username"]
+            
+            report = (
+                f"🟢 **SUPPORT BOT IS ACTIVE & ONLINE!**\n"
+                f"━━━━━━━━━━━━━━━━━━━━━━\n"
+                f"• **Bot Name:** {bot_name}\n"
+                f"• **Username:** @{bot_username}\n"
+                f"• **Host Status:** Active & Responding\n"
+                f"• **Telegram API:** Connected"
+            )
+            bot.reply_to(message, report, parse_mode="Markdown")
+        else:
+            # Alert to Owner
+            alert_text = (
+                "🚨 **J.A.R.V.I.S. SYSTEM ALERT**\n"
+                "━━━━━━━━━━━━━━━━━━━━━━\n"
+                "⚠️ **SUPPORT BOT IS OFFLINE!**\n\n"
+                "Sir, your Support Bot server on Render appears to be DOWN or token revoked."
+            )
+            bot.send_message(OWNER_ID, alert_text, parse_mode="Markdown")
+            bot.reply_to(message, "🔴 **SUPPORT BOT IS OFFLINE!** Alert sent to Owner.", parse_mode="Markdown")
+
+    except Exception as e:
+        bot.send_message(OWNER_ID, f"🚨 **ALERT: SUPPORT BOT UNREACHABLE!**\nError: `{e}`", parse_mode="Markdown")
+        bot.reply_to(message, f"🔴 **SUPPORT BOT IS OFFLINE!**\nError: `{e}`", parse_mode="Markdown")
 
 @bot.message_handler(commands=['owner'])
 def owner_cmd(message):
     if message.from_user.id == OWNER_ID:
-        bot.reply_to(
-            message,
-            f"👑 **Welcome Back, Boss!**\n\n"
-            f"• **Owner ID:** `{OWNER_ID}`\n"
-            f"• **Access Status:** Full Admin / Root Access Granted.\n"
-            f"• **Server:** Vercel Serverless (Ultra Low Latency)\n"
-            f"• **AI Engine:** Llama 3.3 Versatile",
-            parse_mode="Markdown"
-        )
+        bot.reply_to(message, "👑 **Boss Access Confirmed.** System Monitoring: **Active**", parse_mode="Markdown")
     else:
-        bot.reply_to(message, "⚠️ Access Denied. This command is restricted to the Owner.")
-
-@bot.message_handler(commands=['stats'])
-def stats_cmd(message):
-    if message.from_user.id == OWNER_ID:
-        active_count = len(users_list) if users_list else 1
-        bot.reply_to(
-            message,
-            f"📊 **J.A.R.V.I.S. SYSTEM DIAGNOSTICS**\n"
-            f"━━━━━━━━━━━━━━━━━━━━━━\n"
-            f"🟢 **Status:** Active & Ready\n"
-            f"👥 **Tracked Chats:** {active_count}\n"
-            f"⚡ **Voice Engine:** Crisp Deep Speech API\n"
-            f"⚡ **LLM Core:** Groq Llama 3.3-70B",
-            parse_mode="Markdown"
-        )
-    else:
-        bot.reply_to(message, "Sir, diagnostic metrics are restricted to Sir Tony Stark.")
-
-@bot.message_handler(commands=['broadcast'])
-def broadcast_cmd(message):
-    if message.from_user.id == OWNER_ID:
-        msg_text = message.text.replace('/broadcast', '').strip()
-        if not msg_text:
-            bot.reply_to(message, "Sir, please specify the message to broadcast. Example: `/broadcast Hello All`", parse_mode="Markdown")
-            return
-        
-        success = 0
-        for uid in list(users_list):
-            try:
-                bot.send_message(uid, f"📢 **ANNOUNCEMENT FROM SIR:**\n\n{msg_text}", parse_mode="Markdown")
-                success += 1
-            except Exception:
-                pass
-        bot.reply_to(message, f"✅ Broadcast sent to {success} users, Sir.", parse_mode="Markdown")
-    else:
-        bot.reply_to(message, "Sir, broadcasting rights are exclusive to the Boss.")
+        bot.reply_to(message, "Restricted to Boss.")
 
 # ----------------- VOICE RESPONSE COMMAND -----------------
 @bot.message_handler(commands=['v', 'voice'])
 def handle_voice_chat(message):
-    users_list.add(message.chat.id)
     user_query = message.text.replace('/voice', '').replace('/v', '').strip()
-    
     if not user_query:
-        bot.reply_to(message, "Sir, please type a prompt after the command. Example: `/voice Who created you?`", parse_mode="Markdown")
+        bot.reply_to(message, "Type prompt. Example: `/v Who are you?`", parse_mode="Markdown")
         return
 
     try:
         bot.send_chat_action(message.chat.id, 'record_audio')
         ai_reply = get_groq_response(user_query)
-        
-        # Clean markdown symbols for smooth voice generation
         clean_text = ai_reply.replace('*', '').replace('#', '').replace('`', '')
-        
-        # Deep Crystal Clear Speech REST API
         encoded_text = urllib.parse.quote(clean_text)
         voice_url = f"https://dict.youdao.com/dictvoice?audio={encoded_text}&type=2"
-        "
         
-        bot.send_voice(
-            message.chat.id,
-            voice=voice_url,
-            caption=f"🎙️ **J.A.R.V.I.S. Voice Note:**\n\n{ai_reply}",
-            parse_mode="Markdown",
-            reply_to_message_id=message.message_id
-        )
+        bot.send_voice(message.chat.id, voice=voice_url, caption=f"🎙️ **J.A.R.V.I.S.:**\n\n{ai_reply}", parse_mode="Markdown")
     except Exception as e:
-        bot.reply_to(message, f"Sir, error generating audio response: `{e}`", parse_mode="Markdown")
+        bot.reply_to(message, f"Voice error: `{e}`", parse_mode="Markdown")
 
-# ----------------- NORMAL CHAT HANDLER -----------------
+# ----------------- GENERAL CHAT -----------------
 @bot.message_handler(func=lambda message: True)
 def handle_ai_chat(message):
-    users_list.add(message.chat.id)
-    if not GROQ_API_KEY:
-        bot.reply_to(message, "Sir, `GROQ_API_KEY` is not set in Vercel Environment Variables.")
-        return
-
     try:
         bot.send_chat_action(message.chat.id, 'typing')
         ai_reply = get_groq_response(message.text)
         bot.reply_to(message, ai_reply, parse_mode="Markdown")
     except Exception as e:
-        bot.reply_to(message, f"Sir, error encountered: `{e}`", parse_mode="Markdown")
+        bot.reply_to(message, f"Error: `{e}`", parse_mode="Markdown")
     
