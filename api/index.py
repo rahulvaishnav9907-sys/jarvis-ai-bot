@@ -1,7 +1,5 @@
 import os
-import json
 import logging
-import urllib.parse
 import asyncio
 import datetime
 import pytz
@@ -14,12 +12,12 @@ from flask import Flask
 
 logging.basicConfig(level=logging.INFO)
 
-# --- FLASK DUMMY SERVER FOR RENDER PORT BINDING ---
+# --- FLASK SERVER FOR RENDER ---
 app = Flask('')
 
 @app.route('/')
 def home():
-    return "J.A.R.V.I.S. is Active & Running!"
+    return "J.A.R.V.I.S. Active & Operational!"
 
 def run_web():
     port = int(os.environ.get("PORT", 8080))
@@ -35,7 +33,7 @@ BOT_TOKEN = os.environ.get("BOT_TOKEN", "").strip()
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "").strip()
 SUPPORT_BOT_TOKEN = os.environ.get("SUPPORT_BOT_TOKEN", "").strip()
 
-FOOTER = "\n\n⚡ *Powered by - Anime Nation*"
+FOOTER_TEXT = "⚡ *Powered by - Anime Nation*"
 
 try:
     OWNER_ID = int(os.environ.get("OWNER_ID", "8088024998"))
@@ -44,7 +42,7 @@ except ValueError:
 
 bot = telebot.TeleBot(BOT_TOKEN, threaded=False)
 
-# Database Setup for Lifetime User Tracking
+# Database Setup
 DB_FILE = "jarvis_users.db"
 
 def init_db():
@@ -66,7 +64,7 @@ def register_chat(chat_id, chat_type="private"):
     try:
         conn = sqlite3.connect(DB_FILE)
         cursor = conn.cursor()
-        cursor.execute("INSERT OR IGNORE INTO chats (chat_id, chat_type) VALUES (?, ?)", (chat_id, chat_type))
+        cursor.execute("INSERT OR IGNORE INTO chats (chat_id, chat_type) VALUES (?, ?)", (chat_id, str(chat_type)))
         conn.commit()
         conn.close()
     except Exception as e:
@@ -83,27 +81,30 @@ def get_total_chats():
     except Exception:
         return 0
 
-def get_all_chat_ids():
+def get_all_chats():
     try:
         conn = sqlite3.connect(DB_FILE)
         cursor = conn.cursor()
-        cursor.execute("SELECT chat_id FROM chats")
+        cursor.execute("SELECT chat_id, chat_type FROM chats")
         rows = cursor.fetchall()
         conn.close()
-        return [r[0] for r in rows]
+        return rows
     except Exception:
         return []
+
+def format_text(text):
+    if FOOTER_TEXT not in text:
+        return f"{text.strip()}\n\n{FOOTER_TEXT}"
+    return text.strip()
 
 def get_current_ist_datetime():
     ist = pytz.timezone('Asia/Kolkata')
     now = datetime.datetime.now(ist)
-    current_time = now.strftime("%I:%M %p")
-    current_date = now.strftime("%A, %B %d, %Y")
-    return current_time, current_date
+    return now.strftime("%I:%M %p"), now.strftime("%A, %B %d, %Y")
 
 def get_groq_response(prompt_text, user_name="Sir"):
     if not GROQ_API_KEY:
-        return "Sir, GROQ_API_KEY environment variable mein missing hai."
+        return "Sir, GROQ_API_KEY environment variable missing hai."
     
     current_time, current_date = get_current_ist_datetime()
     
@@ -122,7 +123,6 @@ def get_groq_response(prompt_text, user_name="Sir"):
                     f"Always address the user by their name '{user_name}'. "
                     f"Real-time Current IST Time: {current_time}. "
                     f"Real-time Current Date: {current_date}. "
-                    f"Whenever asked about time, date, or day, use this real-time info. "
                     f"Respond concisely in character."
                 )
             },
@@ -136,10 +136,15 @@ def get_groq_response(prompt_text, user_name="Sir"):
             return response.json()['choices'][0]['message']['content']
     except Exception as e:
         logging.error(f"Groq API Error: {e}")
-    return "Sir, core intelligence access karte waqt problem hui hai."
+    return "Sir, core intelligence access karne me issue hai."
+
+# Automatic Registration Handler for Channel Posts & Member updates
+@bot.channel_post_handler(func=lambda message: True)
+def track_channel_posts(message):
+    register_chat(message.chat.id, "channel")
 
 @bot.my_chat_member_handler()
-def track_chats(message):
+def track_my_status(message):
     register_chat(message.chat.id, message.chat.type)
 
 @bot.message_handler(commands=['start', 'help'])
@@ -156,18 +161,59 @@ def start_cmd(message):
         f"• `/broadcast <msg>` : Mass broadcast to all chats\n"
         f"• `/stats` : Check Total Users & System Metrics\n"
         f"• `/owner` : Owner Access Check"
-        f"{FOOTER}"
     )
-    bot.reply_to(message, welcome_text, parse_mode="Markdown")
+    bot.reply_to(message, format_text(welcome_text), parse_mode="Markdown")
+
+@bot.message_handler(commands=['broadcast'])
+def broadcast_cmd(message):
+    if message.from_user.id != OWNER_ID:
+        bot.reply_to(message, format_text("⚠️ Access Denied: Sirf Boss hi broadcast kar sakte hain."), parse_mode="Markdown")
+        return
+
+    broadcast_msg = message.text.replace('/broadcast', '').strip()
+    if not broadcast_msg:
+        bot.reply_to(message, format_text("⚠️ Command format: `/broadcast Aapka Message Here`"), parse_mode="Markdown")
+        return
+
+    # User ke text me duplicate footer clean karna
+    clean_broadcast_msg = broadcast_msg.replace("⚡ Powered by - Anime Nation", "").replace("⚡ *Powered by - Anime Nation*", "").strip()
+
+    bot.reply_to(message, "📢 *Initiating Global Broadcast across all Groups & Channels...*", parse_mode="Markdown")
+    
+    all_chats = get_all_chats()
+    success = 0
+    failed = 0
+    error_reasons = []
+
+    for chat_id, chat_type in all_chats:
+        try:
+            bot.send_message(
+                chat_id, 
+                format_text(f"📢 **J.A.R.V.I.S. BROADCAST ANNOUNCEMENT**\n━━━━━━━━━━━━━━━━━━━━━━\n\n{clean_broadcast_msg}"),
+                parse_mode="Markdown"
+            )
+            success += 1
+        except Exception as e:
+            failed += 1
+            error_reasons.append(f"`{chat_id}`: {str(e)[:40]}")
+
+    error_log = "\n".join(error_reasons[:3]) if error_reasons else "None"
+
+    report = (
+        f"📊 **BROADCAST REPORT COMPLETE**\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"🟢 **Successfully Delivered:** `{success}` chats\n"
+        f"🔴 **Failed / Removed:** `{failed}` chats\n\n"
+        f"⚠️ **Last Errors:**\n{error_log}"
+    )
+    bot.reply_to(message, format_text(report), parse_mode="Markdown")
 
 @bot.message_handler(commands=['stats', 'users'])
 def stats_cmd(message):
     register_chat(message.chat.id, message.chat.type)
     if message.from_user.id != OWNER_ID:
-        bot.reply_to(message, f"⚠️ Access Denied: Sirf Boss hi stats check kar sakte hain.{FOOTER}", parse_mode="Markdown")
+        bot.reply_to(message, format_text("⚠️ Access Denied: Sirf Boss hi stats check kar sakte hain."), parse_mode="Markdown")
         return
-
-    bot.reply_to(message, "🔄 *Fetching system metrics...*", parse_mode="Markdown")
 
     total_users = get_total_chats()
     
@@ -190,62 +236,22 @@ def stats_cmd(message):
         f"📊 **SYSTEM METRICS REPORT**\n"
         f"━━━━━━━━━━━━━━━━━━━━━━\n\n"
         f"🤖 **J.A.R.V.I.S. AI BOT**\n"
-        f"• **Total Users & Joined Chats:** `{total_users}`\n"
+        f"• **Total Registered Chats:** `{total_users}`\n"
         f"• **Status:** 🟢 Online & Running\n\n"
         f"🎧 **SUPPORT BOT ({support_username})**\n"
         f"• **Status:** {support_status_text}\n\n"
         f"🕒 **SYSTEM TIME (IST):** `{current_time}`\n"
         f"📅 **SYSTEM DATE:** `{current_date}`"
-        f"{FOOTER}"
     )
-    
-    bot.reply_to(message, stats_msg, parse_mode="Markdown")
-
-@bot.message_handler(commands=['broadcast'])
-def broadcast_cmd(message):
-    if message.from_user.id != OWNER_ID:
-        bot.reply_to(message, f"⚠️ Access Denied: Sirf Boss hi broadcast kar sakte hain.{FOOTER}", parse_mode="Markdown")
-        return
-
-    broadcast_msg = message.text.replace('/broadcast', '').strip()
-    if not broadcast_msg:
-        bot.reply_to(message, f"⚠️ Command format: `/broadcast Aapka Message Here`{FOOTER}", parse_mode="Markdown")
-        return
-
-    bot.reply_to(message, "📢 *Initiating Global Broadcast across all Groups & Channels...*", parse_mode="Markdown")
-    
-    all_chat_ids = get_all_chat_ids()
-    success = 0
-    failed = 0
-
-    for chat_id in all_chat_ids:
-        try:
-            bot.send_message(
-                chat_id, 
-                f"📢 **J.A.R.V.I.S. BROADCAST ANNOUNCEMENT**\n━━━━━━━━━━━━━━━━━━━━━━\n\n{broadcast_msg}{FOOTER}",
-                parse_mode="Markdown"
-            )
-            success += 1
-        except Exception:
-            failed += 1
-
-    report = (
-        f"📊 **BROADCAST REPORT COMPLETE**\n"
-        f"━━━━━━━━━━━━━━━━━━━━━━\n"
-        f"🟢 **Successfully Delivered:** `{success}` chats\n"
-        f"🔴 **Failed / Removed:** `{failed}` chats"
-        f"{FOOTER}"
-    )
-    bot.reply_to(message, report, parse_mode="Markdown")
+    bot.reply_to(message, format_text(stats_msg), parse_mode="Markdown")
 
 @bot.message_handler(commands=['support_status'])
 def check_support_status(message):
     register_chat(message.chat.id, message.chat.type)
     if not SUPPORT_BOT_TOKEN:
-        bot.reply_to(message, f"⚠️ Sir, `SUPPORT_BOT_TOKEN` set nahi hai.{FOOTER}", parse_mode="Markdown")
+        bot.reply_to(message, format_text("⚠️ Sir, `SUPPORT_BOT_TOKEN` set nahi hai."), parse_mode="Markdown")
         return
 
-    bot.reply_to(message, "🔍 *Pinging Support Bot system...*", parse_mode="Markdown")
     try:
         url = f"https://api.telegram.org/bot{SUPPORT_BOT_TOKEN}/getMe"
         res = requests.get(url, timeout=5).json()
@@ -255,24 +261,24 @@ def check_support_status(message):
             bot_username = res["result"]["username"]
             bot.reply_to(
                 message,
-                f"🟢 **SUPPORT BOT IS ONLINE!**\n\n• **Name:** {bot_name}\n• **Username:** @{bot_username}{FOOTER}",
+                format_text(f"🟢 **SUPPORT BOT IS ONLINE!**\n\n• **Name:** {bot_name}\n• **Username:** @{bot_username}"),
                 parse_mode="Markdown"
             )
         else:
-            bot.send_message(OWNER_ID, f"🚨 **ALERT: SUPPORT BOT IS OFFLINE!**{FOOTER}", parse_mode="Markdown")
-            bot.reply_to(message, f"🔴 **SUPPORT BOT IS OFFLINE!** Alert sent to Owner.{FOOTER}", parse_mode="Markdown")
+            bot.send_message(OWNER_ID, format_text("🚨 **ALERT: SUPPORT BOT IS OFFLINE!**"), parse_mode="Markdown")
+            bot.reply_to(message, format_text("🔴 **SUPPORT BOT IS OFFLINE!** Alert sent to Owner."), parse_mode="Markdown")
     except Exception as e:
-        bot.send_message(OWNER_ID, f"🚨 **ALERT: UNREACHABLE!**\nError: `{e}`{FOOTER}", parse_mode="Markdown")
-        bot.reply_to(message, f"🔴 **SUPPORT BOT UNREACHABLE!**\nError: `{e}`{FOOTER}", parse_mode="Markdown")
+        bot.send_message(OWNER_ID, format_text(f"🚨 **ALERT: UNREACHABLE!**\nError: `{e}`"), parse_mode="Markdown")
+        bot.reply_to(message, format_text(f"🔴 **SUPPORT BOT UNREACHABLE!**\nError: `{e}`"), parse_mode="Markdown")
 
 @bot.message_handler(commands=['owner'])
 def owner_cmd(message):
     register_chat(message.chat.id, message.chat.type)
     user_name = message.from_user.first_name or "User"
     if message.from_user.id == OWNER_ID:
-        bot.reply_to(message, f"👑 **Boss Access Confirmed.** Welcome back, {user_name}!{FOOTER}", parse_mode="Markdown")
+        bot.reply_to(message, format_text(f"👑 **Boss Access Confirmed.** Welcome back, {user_name}!"), parse_mode="Markdown")
     else:
-        bot.reply_to(message, f"Restricted to Boss.{FOOTER}")
+        bot.reply_to(message, format_text("Restricted to Boss."), parse_mode="Markdown")
 
 @bot.message_handler(commands=['v', 'voice'])
 def handle_voice_chat(message):
@@ -280,7 +286,7 @@ def handle_voice_chat(message):
     user_name = message.from_user.first_name or "User"
     user_query = message.text.replace('/voice', '').replace('/v', '').strip()
     if not user_query:
-        bot.reply_to(message, f"Please query likhein voice mode ke liye.{FOOTER}", parse_mode="Markdown")
+        bot.reply_to(message, format_text("Please query likhein voice mode ke liye."), parse_mode="Markdown")
         return
 
     try:
@@ -305,12 +311,12 @@ def handle_voice_chat(message):
             bot.send_voice(
                 message.chat.id, 
                 voice=voice, 
-                caption=f"🎙️ **J.A.R.V.I.S. (Deep Voice):**\n\n{ai_reply}{FOOTER}", 
+                caption=format_text(f"🎙️ **J.A.R.V.I.S. (Deep Voice):**\n\n{ai_reply}"), 
                 parse_mode="Markdown"
             )
 
     except Exception as e:
-        bot.reply_to(message, f"Voice Error: `{e}`{FOOTER}", parse_mode="Markdown")
+        bot.reply_to(message, format_text(f"Voice Error: `{e}`"), parse_mode="Markdown")
 
 @bot.message_handler(func=lambda message: True)
 def handle_ai_chat(message):
@@ -324,19 +330,16 @@ def handle_ai_chat(message):
     try:
         bot.send_chat_action(message.chat.id, 'typing')
         ai_reply = get_groq_response(clean_prompt, user_name=user_name)
-        bot.reply_to(message, f"{ai_reply}{FOOTER}", parse_mode="Markdown")
+        bot.reply_to(message, format_text(ai_reply), parse_mode="Markdown")
     except Exception as e:
-        bot.reply_to(message, f"Error: `{e}`{FOOTER}", parse_mode="Markdown")
+        bot.reply_to(message, format_text(f"Error: `{e}`"), parse_mode="Markdown")
 
 if __name__ == "__main__":
-    logging.info("Starting Web Server for Render Port Binding...")
     keep_alive()
-
-    logging.info("Starting J.A.R.V.I.S. via Long Polling...")
     try:
         bot.delete_webhook(drop_pending_updates=True)
     except Exception as e:
         logging.warning(f"Webhook cleanup note: {e}")
         
-    bot.infinity_polling(timeout=10, long_polling_timeout=5, allowed_updates=['message', 'my_chat_member'])
-    
+    bot.infinity_polling(timeout=10, long_polling_timeout=5, allowed_updates=['message', 'my_chat_member', 'channel_post'])
+
