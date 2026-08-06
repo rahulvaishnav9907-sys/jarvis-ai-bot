@@ -1,13 +1,10 @@
 import os
 import logging
-import urllib.parse
 import requests
+import urllib.parse
 import telebot
-from flask import Flask, request
 
 logging.basicConfig(level=logging.INFO)
-
-app = Flask(__name__)
 
 # --- CONFIGURATION ---
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "8701237136:AAGznwDtx8Gk7KP2I9dd5p09MMyW-ZeVu6A").strip()
@@ -21,9 +18,15 @@ except ValueError:
 
 bot = telebot.TeleBot(BOT_TOKEN, threaded=False)
 
+# Webhook remove kar rahe hain taaki Long Polling activate ho sake
+try:
+    bot.remove_webhook()
+except Exception as e:
+    logging.info(f"Webhook remove note: {e}")
+
 def get_groq_response(prompt_text):
     if not GROQ_API_KEY:
-        return "Sir, GROQ_API_KEY is not configured in environment variables."
+        return "Sir, GROQ_API_KEY is missing in environment variables."
     
     url = "https://api.groq.com/openai/v1/chat/completions"
     headers = {
@@ -35,7 +38,7 @@ def get_groq_response(prompt_text):
         "messages": [
             {
                 "role": "system",
-                "content": "You are J.A.R.V.I.S., a polite, smart, and witty AI assistant created for Tony Stark. Respond concisely."
+                "content": "You are J.A.R.V.I.S., a polite, smart, and witty AI assistant created for Tony Stark. Respond concisely in character."
             },
             {"role": "user", "content": prompt_text}
         ],
@@ -49,28 +52,15 @@ def get_groq_response(prompt_text):
         logging.error(f"Groq API Error: {e}")
     return "Sir, I encountered an issue accessing my core intelligence processors."
 
-@app.route('/', methods=['GET'])
-def home():
-    return "⚡ J.A.R.V.I.S. Active", 200
-
-@app.route('/webhook', methods=['POST'])
-def webhook():
-    if request.headers.get('content-type') == 'application/json':
-        json_string = request.get_data().decode('utf-8')
-        update = telebot.types.Update.de_json(json_string)
-        bot.process_new_updates([update])
-        return "OK", 200
-    return "Forbidden", 403
-
 @bot.message_handler(commands=['start', 'help'])
 def start_cmd(message):
     welcome_text = (
-        "🤖 **J.A.R.V.I.S. ONLINE (Support Bot Monitor)**\n"
+        "🤖 **J.A.R.V.I.S. ONLINE (Render Hosting)**\n"
         "━━━━━━━━━━━━━━━━━━━━━━\n"
         "Good day, Sir! All systems operational.\n\n"
         "📊 **Commands:**\n"
         "• `/support_status` : Live check of Support Bot status.\n"
-        "• `/v <message>` : Deep voice mode chat.\n"
+        "• `/v <message>` : Voice mode chat.\n"
         "• `/owner` : Check Root Access."
     )
     bot.reply_to(message, welcome_text, parse_mode="Markdown")
@@ -78,7 +68,7 @@ def start_cmd(message):
 @bot.message_handler(commands=['support_status'])
 def check_support_status(message):
     if not SUPPORT_BOT_TOKEN:
-        bot.reply_to(message, "⚠️ Sir, `SUPPORT_BOT_TOKEN` is missing in Vercel Environment Variables.", parse_mode="Markdown")
+        bot.reply_to(message, "⚠️ Sir, `SUPPORT_BOT_TOKEN` is missing in Environment Variables.", parse_mode="Markdown")
         return
 
     bot.reply_to(message, "🔍 *Pinging Support Bot system...*", parse_mode="Markdown")
@@ -134,4 +124,8 @@ def handle_ai_chat(message):
         bot.reply_to(message, ai_reply, parse_mode="Markdown")
     except Exception as e:
         bot.reply_to(message, f"Error: `{e}`", parse_mode="Markdown")
+
+if __name__ == "__main__":
+    logging.info("Starting J.A.R.V.I.S. Bot via Infinity Polling...")
+    bot.infinity_polling(skip_pending=True)
     
