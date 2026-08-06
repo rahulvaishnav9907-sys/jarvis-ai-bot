@@ -12,7 +12,7 @@ from flask import Flask
 
 logging.basicConfig(level=logging.INFO)
 
-# --- FLASK SERVER FOR RENDER PORT BINDING ---
+# --- FLASK DUMMY SERVER FOR RENDER PORT BINDING ---
 app = Flask('')
 
 @app.route('/')
@@ -42,7 +42,7 @@ except ValueError:
 
 bot = telebot.TeleBot(BOT_TOKEN, threaded=False)
 
-# Database Setup with Memory Support
+# --- DATABASE & CONTEXT MEMORY SETUP ---
 DB_FILE = "jarvis_users.db"
 
 def init_db():
@@ -86,7 +86,7 @@ def save_memory(chat_id, role, content):
         conn = sqlite3.connect(DB_FILE)
         cursor = conn.cursor()
         cursor.execute("INSERT INTO memory (chat_id, role, content) VALUES (?, ?, ?)", (chat_id, role, content))
-        # Keep only the last 12 messages per chat to optimize memory performance
+        # Keep last 12 messages per chat for smooth conversation memory
         cursor.execute('''
             DELETE FROM memory 
             WHERE chat_id = ? AND id NOT IN (
@@ -141,26 +141,22 @@ def get_current_ist_datetime():
     now = datetime.datetime.now(ist)
     return now.strftime("%I:%M %p"), now.strftime("%A, %B %d, %Y")
 
-# --- HIGH-LEVEL NEURAL INTELLIGENCE ENGINE ---
+# --- ADVANCED HIGH-LEVEL INTELLIGENCE ENGINE ---
 def get_groq_response(chat_id, prompt_text, user_name="Sir"):
     if not GROQ_API_KEY:
         return "Sir, GROQ_API_KEY environment variable missing hai."
     
     current_time, current_date = get_current_ist_datetime()
-    
-    # Retrieve previous chat history for memory continuity
     history = get_chat_history(chat_id)
 
     system_instruction = {
         "role": "system",
         "content": (
-            f"You are J.A.R.V.I.S., an elite, hyper-intelligent, state-of-the-art AI system. "
-            f"You possess deep analytical capabilities, expert-level programming skills, advanced logical reasoning, and precise contextual memory. "
+            f"You are J.A.R.V.I.S., an elite, hyper-intelligent AI system. "
             f"Always address the user as '{user_name}'. "
             f"Real-time System Date: {current_date}. Real-time System Time (IST): {current_time}. "
-            f"Process user inquiries using structured step-by-step thinking (Chain-of-Thought). "
-            f"Deliver clear, highly articulate, insightful, and comprehensive answers. "
-            f"Use Markdown code blocks, bold headings, and elegant formatting where applicable."
+            f"Deliver clear, highly structured, and insightful answers. "
+            f"Avoid unclosed formatting symbols like single asterisks or underscores to maintain clean Markdown."
         )
     }
 
@@ -175,7 +171,7 @@ def get_groq_response(chat_id, prompt_text, user_name="Sir"):
         "model": "llama-3.3-70b-versatile",
         "messages": messages,
         "temperature": 0.5,
-        "max_tokens": 4096,
+        "max_tokens": 2048,
         "top_p": 0.95
     }
     
@@ -183,15 +179,14 @@ def get_groq_response(chat_id, prompt_text, user_name="Sir"):
         response = requests.post(url, headers=headers, json=payload, timeout=25)
         if response.status_code == 200:
             reply = response.json()['choices'][0]['message']['content']
-            # Save interaction in context memory
             save_memory(chat_id, "user", prompt_text)
             save_memory(chat_id, "assistant", reply)
             return reply
     except Exception as e:
-        logging.error(f"Groq High-Level AI Error: {e}")
-    return "Sir, high-level neural processing mein latency aayi hai. Please re-try."
+        logging.error(f"Groq AI Error: {e}")
+    return "Sir, neural processing mein latency aayi hai. Please try again."
 
-# Automatic Registration
+# --- AUTOMATIC REGISTRATION HANDLERS ---
 @bot.channel_post_handler(func=lambda message: True)
 def track_channel_posts(message):
     register_chat(message.chat.id, "channel")
@@ -200,6 +195,7 @@ def track_channel_posts(message):
 def track_my_status(message):
     register_chat(message.chat.id, message.chat.type)
 
+# --- COMMAND HANDLERS ---
 @bot.message_handler(commands=['start', 'help'])
 def start_cmd(message):
     register_chat(message.chat.id, message.chat.type)
@@ -278,7 +274,6 @@ def stats_cmd(message):
         return
 
     total_users = get_total_chats()
-    
     support_status_text = "🔴 Offline / Unknown"
     support_username = "@TEAMNATI0Nbot"
     
@@ -362,7 +357,7 @@ def handle_voice_chat(message):
         
         async def generate_tts():
             communicate = edge_tts.Communicate(
-                clean_text[:1000],  # Voice optimization
+                clean_text[:1000], 
                 "hi-IN-MadhurNeural", 
                 pitch="-15Hz", 
                 rate="-10%"
@@ -372,16 +367,24 @@ def handle_voice_chat(message):
         asyncio.run(generate_tts())
 
         with open(audio_file, 'rb') as voice:
-            bot.send_voice(
-                message.chat.id, 
-                voice=voice, 
-                caption=format_text(f"🎙️ **J.A.R.V.I.S. (Deep Voice):**\n\n{ai_reply[:900]}..."), 
-                parse_mode="Markdown"
-            )
+            try:
+                bot.send_voice(
+                    message.chat.id, 
+                    voice=voice, 
+                    caption=format_text(f"🎙️ **J.A.R.V.I.S. (Deep Voice):**\n\n{ai_reply[:900]}..."), 
+                    parse_mode="Markdown"
+                )
+            except Exception:
+                bot.send_voice(
+                    message.chat.id, 
+                    voice=voice, 
+                    caption=f"🎙️ J.A.R.V.I.S. (Deep Voice):\n\n{clean_text[:900]}...\n\n⚡ Powered by - Anime Nation"
+                )
 
     except Exception as e:
         bot.reply_to(message, format_text(f"Voice Synthesis Error: `{e}`"), parse_mode="Markdown")
 
+# --- MAIN AI CHAT HANDLER WITH SAFE FALLBACK ---
 @bot.message_handler(func=lambda message: True)
 def handle_ai_chat(message):
     register_chat(message.chat.id, message.chat.type)
@@ -394,10 +397,19 @@ def handle_ai_chat(message):
     try:
         bot.send_chat_action(message.chat.id, 'typing')
         ai_reply = get_groq_response(message.chat.id, clean_prompt, user_name=user_name)
-        bot.reply_to(message, format_text(ai_reply), parse_mode="Markdown")
+        
+        # 1. Primary: Try sending with Markdown formatting
+        try:
+            bot.reply_to(message, format_text(ai_reply), parse_mode="Markdown")
+        except Exception:
+            # 2. Fallback: Send as Plain Text if Markdown parsing fails (Prevents 400 Bad Request error)
+            plain_footer = "⚡ Powered by - Anime Nation"
+            bot.reply_to(message, f"{ai_reply}\n\n{plain_footer}")
+
     except Exception as e:
         bot.reply_to(message, format_text(f"Neural Core Exception: `{e}`"), parse_mode="Markdown")
 
+# --- BOT ENTRYPOINT ---
 if __name__ == "__main__":
     keep_alive()
     try:
