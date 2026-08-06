@@ -7,11 +7,10 @@ from flask import Flask, request
 
 logging.basicConfig(level=logging.INFO)
 
-# --- FLASK APPLICATION INSTANCE ---
+# Flask app initialization for Vercel
 app = Flask(__name__)
-handler = app  # Explicit alias for Vercel WSGI parser
 
-# --- CONFIGURATION ---
+# CONFIGURATION
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "").strip()
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "").strip()
 SUPPORT_BOT_TOKEN = os.environ.get("SUPPORT_BOT_TOKEN", "").strip()
@@ -147,3 +146,8 @@ def handle_ai_chat(message):
         bot.reply_to(message, ai_reply, parse_mode="Markdown")
     except Exception as e:
         bot.reply_to(message, f"Error: `{e}`", parse_mode="Markdown")
+
+# Entry point for Vercel Serverless
+if __name__ == '__main__':
+    app.run()
+                                 
