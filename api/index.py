@@ -9,8 +9,26 @@ import requests
 import telebot
 import edge_tts
 import sqlite3
+from threading import Thread
+from flask import Flask
 
 logging.basicConfig(level=logging.INFO)
+
+# --- FLASK DUMMY SERVER FOR RENDER PORT BINDING ---
+app = Flask('')
+
+@app.route('/')
+def home():
+    return "J.A.R.V.I.S. is Active & Running!"
+
+def run_web():
+    port = int(os.environ.get("PORT", 8080))
+    app.run(host='0.0.0.0', port=port)
+
+def keep_alive():
+    t = Thread(target=run_web)
+    t.daemon = True
+    t.start()
 
 # --- CONFIGURATION ---
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "").strip()
@@ -76,7 +94,6 @@ def get_all_chat_ids():
     except Exception:
         return []
 
-# Real-time IST Time & Date Generator
 def get_current_ist_datetime():
     ist = pytz.timezone('Asia/Kolkata')
     now = datetime.datetime.now(ist)
@@ -312,6 +329,9 @@ def handle_ai_chat(message):
         bot.reply_to(message, f"Error: `{e}`{FOOTER}", parse_mode="Markdown")
 
 if __name__ == "__main__":
+    logging.info("Starting Web Server for Render Port Binding...")
+    keep_alive()
+
     logging.info("Starting J.A.R.V.I.S. via Long Polling...")
     try:
         bot.delete_webhook(drop_pending_updates=True)
@@ -319,4 +339,4 @@ if __name__ == "__main__":
         logging.warning(f"Webhook cleanup note: {e}")
         
     bot.infinity_polling(timeout=10, long_polling_timeout=5, allowed_updates=['message', 'my_chat_member'])
-        
+    
