@@ -1,13 +1,13 @@
 import os
 import logging
-import requests
 import urllib.parse
+import requests
 import telebot
 
 logging.basicConfig(level=logging.INFO)
 
 # --- CONFIGURATION ---
-BOT_TOKEN = os.environ.get("BOT_TOKEN", "8701237136:AAGznwDtx8Gk7KP2I9dd5p09MMyW-ZeVu6A").strip()
+BOT_TOKEN = os.environ.get("BOT_TOKEN", "").strip()
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "").strip()
 SUPPORT_BOT_TOKEN = os.environ.get("SUPPORT_BOT_TOKEN", "").strip()
 
@@ -18,15 +18,15 @@ except ValueError:
 
 bot = telebot.TeleBot(BOT_TOKEN, threaded=False)
 
-# Webhook remove kar rahe hain taaki Long Polling activate ho sake
+# Webhook clear kar rahe hain taaki Long Polling activate ho sake
 try:
     bot.remove_webhook()
 except Exception as e:
-    logging.info(f"Webhook remove note: {e}")
+    logging.info(f"Webhook removal note: {e}")
 
 def get_groq_response(prompt_text):
     if not GROQ_API_KEY:
-        return "Sir, GROQ_API_KEY is missing in environment variables."
+        return "Sir, GROQ_API_KEY environment variable mein missing hai."
     
     url = "https://api.groq.com/openai/v1/chat/completions"
     headers = {
@@ -50,25 +50,25 @@ def get_groq_response(prompt_text):
             return response.json()['choices'][0]['message']['content']
     except Exception as e:
         logging.error(f"Groq API Error: {e}")
-    return "Sir, I encountered an issue accessing my core intelligence processors."
+    return "Sir, core intelligence access karte waqt problem hui hai."
 
 @bot.message_handler(commands=['start', 'help'])
 def start_cmd(message):
     welcome_text = (
-        "🤖 **J.A.R.V.I.S. ONLINE (Render Hosting)**\n"
+        "🤖 **J.A.R.V.I.S. ONLINE (Render Service)**\n"
         "━━━━━━━━━━━━━━━━━━━━━━\n"
         "Good day, Sir! All systems operational.\n\n"
         "📊 **Commands:**\n"
-        "• `/support_status` : Live check of Support Bot status.\n"
-        "• `/v <message>` : Voice mode chat.\n"
-        "• `/owner` : Check Root Access."
+        "• `/support_status` : Support Bot status check\n"
+        "• `/v <message>` : Voice mode chat\n"
+        "• `/owner` : Owner Access Check"
     )
     bot.reply_to(message, welcome_text, parse_mode="Markdown")
 
 @bot.message_handler(commands=['support_status'])
 def check_support_status(message):
     if not SUPPORT_BOT_TOKEN:
-        bot.reply_to(message, "⚠️ Sir, `SUPPORT_BOT_TOKEN` is missing in Environment Variables.", parse_mode="Markdown")
+        bot.reply_to(message, "⚠️ Sir, `SUPPORT_BOT_TOKEN` set nahi hai.", parse_mode="Markdown")
         return
 
     bot.reply_to(message, "🔍 *Pinging Support Bot system...*", parse_mode="Markdown")
@@ -94,7 +94,7 @@ def check_support_status(message):
 @bot.message_handler(commands=['owner'])
 def owner_cmd(message):
     if message.from_user.id == OWNER_ID:
-        bot.reply_to(message, "👑 **Boss Access Confirmed.** System Monitoring: **Active**", parse_mode="Markdown")
+        bot.reply_to(message, "👑 **Boss Access Confirmed.**", parse_mode="Markdown")
     else:
         bot.reply_to(message, "Restricted to Boss.")
 
@@ -102,7 +102,7 @@ def owner_cmd(message):
 def handle_voice_chat(message):
     user_query = message.text.replace('/voice', '').replace('/v', '').strip()
     if not user_query:
-        bot.reply_to(message, "Please provide a query for voice mode.", parse_mode="Markdown")
+        bot.reply_to(message, "Please query likhein voice mode ke liye.", parse_mode="Markdown")
         return
 
     try:
@@ -126,6 +126,6 @@ def handle_ai_chat(message):
         bot.reply_to(message, f"Error: `{e}`", parse_mode="Markdown")
 
 if __name__ == "__main__":
-    logging.info("Starting J.A.R.V.I.S. Bot via Infinity Polling...")
+    logging.info("Starting J.A.R.V.I.S. via Long Polling...")
     bot.infinity_polling(skip_pending=True)
     
