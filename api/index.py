@@ -1,8 +1,8 @@
 import os
 import logging
+import requests
 from flask import Flask, request
 import telebot
-from google import genai
 
 logging.basicConfig(level=logging.INFO)
 
@@ -10,16 +10,8 @@ logging.basicConfig(level=logging.INFO)
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "").strip()
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
 
-try:
-    OWNER_ID = int(os.environ.get("OWNER_ID", "8088024998"))
-except ValueError:
-    OWNER_ID = 8088024998
-
 bot = telebot.TeleBot(BOT_TOKEN, threaded=False)
 app = Flask(__name__)
-
-# Configure New Google GenAI Client
-client = genai.Client(api_key=GEMINI_API_KEY) if GEMINI_API_KEY else None
 
 # ----------------- FLASK WEBHOOK ENDPOINT -----------------
 @app.route('/', methods=['GET'])
@@ -41,35 +33,50 @@ def start_cmd(message):
     welcome_text = (
         "🤖 **J.A.R.V.I.S. ONLINE (Vercel Serverless)**\n"
         "━━━━━━━━━━━━━━━━━━━━━━\n"
-        "Good day, Sir! Powered by Gemini AI on Serverless Architecture.\n\n"
+        "Good day, Sir! Powered by Stable REST API Architecture.\n\n"
         "💡 *How may I assist you today?*"
     )
     bot.reply_to(message, welcome_text, parse_mode="Markdown")
 
 @bot.message_handler(func=lambda message: True)
 def handle_ai_chat(message):
-    if client:
-        try:
-            bot.send_chat_action(message.chat.id, 'typing')
-            
-            prompt = (
-                "You are J.A.R.V.I.S., a polite, smart, and witty AI assistant created for Tony Stark (the user). "
-                "Respond concisely in character ('Sir', 'At your service'). "
-                "Help with technical questions, code, and general chat in natural Hinglish or English.\n\n"
-                f"User: {message.text}"
-            )
-            
-            # Latest Google GenAI API Call
-            response = client.models.generate_content(
-                model='gemini-2.5-flash',
-                contents=prompt,
-            )
-            
-            if response and response.text:
-                bot.reply_to(message, response.text, parse_mode="Markdown")
-            else:
-                bot.reply_to(message, "Sir, my systems are temporarily busy.", parse_mode="Markdown")
-        except Exception as e:
-            bot.reply_to(message, f"Sir, error encountered: `{e}`", parse_mode="Markdown")
-    else:
-        bot.reply_to(message, "Sir, `GEMINI_API_KEY` is not set.")
+    if not GEMINI_API_KEY:
+        bot.reply_to(message, "Sir, `GEMINI_API_KEY` is not set in Vercel Environment Variables.")
+        return
+
+    try:
+        bot.send_chat_action(message.chat.id, 'typing')
+
+        prompt = (
+            "You are J.A.R.V.I.S., a polite, smart, and witty AI assistant created for Tony Stark (the user). "
+            "Respond concisely in character ('Sir', 'At your service'). "
+            "Help with technical questions, code, and general chat in natural Hinglish or English.\n\n"
+            f"User: {message.text}"
+        )
+
+        # Direct REST API endpoint (No SDK dependency, no version errors)
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}"
+        
+        payload = {
+            "contents": [
+                {
+                    "parts": [
+                        {"text": prompt}
+                    ]
+                }
+            ]
+        }
+
+        response = requests.post(url, json=payload, timeout=10)
+        res_data = response.json()
+
+        if response.status_code == 200:
+            ai_reply = res_data['candidates'][0]['content']['parts'][0]['text']
+            bot.reply_to(message, ai_reply, parse_mode="Markdown")
+        else:
+            error_msg = res_data.get('error', {}).get('message', 'Unknown API Error')
+            bot.reply_to(message, f"Sir, API Error: `{error_msg}`", parse_mode="Markdown")
+
+    except Exception as e:
+        bot.reply_to(message, f"Sir, error encountered: `{e}`", parse_mode="Markdown")
+    
