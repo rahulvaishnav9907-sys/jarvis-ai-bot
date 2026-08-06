@@ -8,7 +8,7 @@ logging.basicConfig(level=logging.INFO)
 
 # ----------------- CONFIGURATION -----------------
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "").strip()
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
+GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "").strip()
 
 bot = telebot.TeleBot(BOT_TOKEN, threaded=False)
 app = Flask(__name__)
@@ -31,52 +31,53 @@ def webhook():
 @bot.message_handler(commands=['start', 'help'])
 def start_cmd(message):
     welcome_text = (
-        "🤖 **J.A.R.V.I.S. ONLINE (Vercel Serverless)**\n"
+        "🤖 **J.A.R.V.I.S. ONLINE (Groq Powered)**\n"
         "━━━━━━━━━━━━━━━━━━━━━━\n"
-        "Good day, Sir! Powered by Stable REST API Architecture.\n\n"
+        "Good day, Sir! Systems are running at maximum capacity.\n\n"
         "💡 *How may I assist you today?*"
     )
     bot.reply_to(message, welcome_text, parse_mode="Markdown")
 
 @bot.message_handler(func=lambda message: True)
 def handle_ai_chat(message):
-    if not GEMINI_API_KEY:
-        bot.reply_to(message, "Sir, `GEMINI_API_KEY` is not set in Vercel Environment Variables.")
+    if not GROQ_API_KEY:
+        bot.reply_to(message, "Sir, `GROQ_API_KEY` is not set in Vercel Environment Variables.")
         return
 
     try:
         bot.send_chat_action(message.chat.id, 'typing')
 
-        prompt = (
-            "You are J.A.R.V.I.S., a polite, smart, and witty AI assistant created for Tony Stark (the user). "
-            "Respond concisely in character ('Sir', 'At your service'). "
-            "Help with technical questions, code, and general chat in natural Hinglish or English.\n\n"
-            f"User: {message.text}"
-        )
-
-        # Gemini 2.5 Flash Endpoint
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={GEMINI_API_KEY}"
+        url = "https://api.groq.com/openai/v1/chat/completions"
+        headers = {
+            "Authorization": f"Bearer {GROQ_API_KEY}",
+            "Content-Type": "application/json"
+        }
         
         payload = {
-            "contents": [
+            "model": "llama-3.3-70b-versatile",
+            "messages": [
                 {
-                    "parts": [
-                        {"text": prompt}
-                    ]
+                    "role": "system",
+                    "content": "You are J.A.R.V.I.S., a polite, smart, and witty AI assistant created for Tony Stark (the user). Respond concisely in character ('Sir', 'At your service'). Help in natural Hinglish or English."
+                },
+                {
+                    "role": "user",
+                    "content": message.text
                 }
-            ]
+            ],
+            "temperature": 0.7
         }
 
-        response = requests.post(url, json=payload, timeout=10)
+        response = requests.post(url, headers=headers, json=payload, timeout=10)
         res_data = response.json()
 
         if response.status_code == 200:
-            ai_reply = res_data['candidates'][0]['content']['parts'][0]['text']
+            ai_reply = res_data['choices'][0]['message']['content']
             bot.reply_to(message, ai_reply, parse_mode="Markdown")
         else:
             error_msg = res_data.get('error', {}).get('message', 'Unknown API Error')
-            bot.reply_to(message, f"Sir, API Error: `{error_msg}`", parse_mode="Markdown")
+            bot.reply_to(message, f"Sir, Groq API Error: `{error_msg}`", parse_mode="Markdown")
 
     except Exception as e:
         bot.reply_to(message, f"Sir, error encountered: `{e}`", parse_mode="Markdown")
-            
+    
