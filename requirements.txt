@@ -1,3 +1,4 @@
 pyTelegramBotAPI
 requests
 edge-tts
+pytz
