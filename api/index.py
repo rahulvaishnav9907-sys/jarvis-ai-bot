@@ -7,10 +7,11 @@ from flask import Flask, request
 
 logging.basicConfig(level=logging.INFO)
 
-# ----------------- FLASK INSTANCE (EXPLICIT TOP-LEVEL) -----------------
+# --- FLASK APPLICATION INSTANCE ---
 app = Flask(__name__)
+handler = app  # Explicit alias for Vercel WSGI parser
 
-# ----------------- CONFIGURATION -----------------
+# --- CONFIGURATION ---
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "").strip()
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "").strip()
 SUPPORT_BOT_TOKEN = os.environ.get("SUPPORT_BOT_TOKEN", "").strip()
@@ -22,7 +23,6 @@ except ValueError:
 
 bot = telebot.TeleBot(BOT_TOKEN, threaded=False)
 
-# Helper function for Groq AI
 def get_groq_response(prompt_text):
     url = "https://api.groq.com/openai/v1/chat/completions"
     headers = {
@@ -48,7 +48,6 @@ def get_groq_response(prompt_text):
         pass
     return "Sir, I encountered an issue accessing my core intelligence processors."
 
-# ----------------- FLASK WEBHOOK ENDPOINT -----------------
 @app.route('/', methods=['GET'])
 def home():
     return "⚡ J.A.R.V.I.S. Core & Support Monitor Active", 200
@@ -61,8 +60,6 @@ def webhook():
         bot.process_new_updates([update])
         return "OK", 200
     return "Forbidden", 403
-
-# ----------------- TELEGRAM COMMANDS -----------------
 
 @bot.message_handler(commands=['start', 'help'])
 def start_cmd(message):
@@ -108,7 +105,7 @@ def check_support_status(message):
                 "🚨 **J.A.R.V.I.S. SYSTEM ALERT**\n"
                 "━━━━━━━━━━━━━━━━━━━━━━\n"
                 "⚠️ **SUPPORT BOT IS OFFLINE!**\n\n"
-                "Sir, your Support Bot server on Render appears to be DOWN or token revoked."
+                "Sir, your Support Bot server appears to be DOWN or token revoked."
             )
             bot.send_message(OWNER_ID, alert_text, parse_mode="Markdown")
             bot.reply_to(message, "🔴 **SUPPORT BOT IS OFFLINE!** Alert sent to Owner.", parse_mode="Markdown")
@@ -124,7 +121,6 @@ def owner_cmd(message):
     else:
         bot.reply_to(message, "Restricted to Boss.")
 
-# ----------------- VOICE RESPONSE COMMAND -----------------
 @bot.message_handler(commands=['v', 'voice'])
 def handle_voice_chat(message):
     user_query = message.text.replace('/voice', '').replace('/v', '').strip()
@@ -143,7 +139,6 @@ def handle_voice_chat(message):
     except Exception as e:
         bot.reply_to(message, f"Voice error: `{e}`", parse_mode="Markdown")
 
-# ----------------- GENERAL CHAT -----------------
 @bot.message_handler(func=lambda message: True)
 def handle_ai_chat(message):
     try:
@@ -152,4 +147,3 @@ def handle_ai_chat(message):
         bot.reply_to(message, ai_reply, parse_mode="Markdown")
     except Exception as e:
         bot.reply_to(message, f"Error: `{e}`", parse_mode="Markdown")
-        
