@@ -12,7 +12,7 @@ from flask import Flask
 
 logging.basicConfig(level=logging.INFO)
 
-# --- FLASK SERVER FOR RENDER ---
+# --- FLASK SERVER FOR RENDER PORT BINDING ---
 app = Flask('')
 
 @app.route('/')
@@ -93,7 +93,7 @@ def get_all_chats():
         return []
 
 def format_text(text):
-    if FOOTER_TEXT not in text:
+    if "Powered by - Anime Nation" not in text:
         return f"{text.strip()}\n\n{FOOTER_TEXT}"
     return text.strip()
 
@@ -138,7 +138,7 @@ def get_groq_response(prompt_text, user_name="Sir"):
         logging.error(f"Groq API Error: {e}")
     return "Sir, core intelligence access karne me issue hai."
 
-# Automatic Registration Handler for Channel Posts & Member updates
+# Automatic Registration
 @bot.channel_post_handler(func=lambda message: True)
 def track_channel_posts(message):
     register_chat(message.chat.id, "channel")
@@ -175,7 +175,6 @@ def broadcast_cmd(message):
         bot.reply_to(message, format_text("⚠️ Command format: `/broadcast Aapka Message Here`"), parse_mode="Markdown")
         return
 
-    # User ke text me duplicate footer clean karna
     clean_broadcast_msg = broadcast_msg.replace("⚡ Powered by - Anime Nation", "").replace("⚡ *Powered by - Anime Nation*", "").strip()
 
     bot.reply_to(message, "📢 *Initiating Global Broadcast across all Groups & Channels...*", parse_mode="Markdown")
@@ -186,6 +185,10 @@ def broadcast_cmd(message):
     error_reasons = []
 
     for chat_id, chat_type in all_chats:
+        # Owner ID ko skip karna taaki self-broadcast fail na ho
+        if chat_id == OWNER_ID and len(all_chats) > 1:
+            continue
+
         try:
             bot.send_message(
                 chat_id, 
@@ -193,9 +196,17 @@ def broadcast_cmd(message):
                 parse_mode="Markdown"
             )
             success += 1
-        except Exception as e:
-            failed += 1
-            error_reasons.append(f"`{chat_id}`: {str(e)[:40]}")
+        except Exception:
+            # Safe Fallback to Plain Text if Markdown parsing fails
+            try:
+                bot.send_message(
+                    chat_id, 
+                    f"📢 J.A.R.V.I.S. BROADCAST ANNOUNCEMENT\n━━━━━━━━━━━━━━━━━━━━━━\n\n{clean_broadcast_msg}\n\n⚡ Powered by - Anime Nation"
+                )
+                success += 1
+            except Exception as e:
+                failed += 1
+                error_reasons.append(f"`{chat_id}`: {str(e)[:40]}")
 
     error_log = "\n".join(error_reasons[:3]) if error_reasons else "None"
 
@@ -342,4 +353,4 @@ if __name__ == "__main__":
         logging.warning(f"Webhook cleanup note: {e}")
         
     bot.infinity_polling(timeout=10, long_polling_timeout=5, allowed_updates=['message', 'my_chat_member', 'channel_post'])
-
+    
