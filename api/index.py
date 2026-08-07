@@ -8,6 +8,7 @@ import requests
 import telebot
 import edge_tts
 import sqlite3
+import html
 from threading import Thread
 from flask import Flask
 
@@ -49,7 +50,6 @@ DB_FILE = "jarvis_users.db"
 def init_db():
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
-    # Chats tracking table
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS chats (
             chat_id INTEGER PRIMARY KEY,
@@ -57,7 +57,6 @@ def init_db():
             registered_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')
-    # Context Memory table
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS memory (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -67,7 +66,6 @@ def init_db():
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')
-    # Quiz stats table
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS quiz_stats (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -181,57 +179,38 @@ def get_current_ist_datetime():
     now = datetime.datetime.now(ist)
     return now.strftime("%I:%M %p"), now.strftime("%A, %B %d, %Y")
 
-# --- ANIME QUIZ QUESTIONS DATABASE ---
-ANIME_QUIZ_DATA = [
-    {
-        "question": "Demon Slayer (Kimetsu no Yaiba) mein Tanjiro ki behen ka naam kya hai?",
+# --- DYNAMIC 1000+ UNLIMITED ANIME QUIZ FETCH ENGINE ---
+def fetch_dynamic_anime_quiz():
+    # Category 31 = Anime & Manga in OpenTDB
+    url = "https://opentdb.com/api.php?amount=1&category=31&type=multiple"
+    try:
+        res = requests.get(url, timeout=5).json()
+        if res.get('response_code') == 0 and res.get('results'):
+            item = res['results'][0]
+            question = html.unescape(item['question'])
+            correct_ans = html.unescape(item['correct_answer'])
+            incorrect_ans = [html.unescape(a) for a in item['incorrect_answers']]
+            
+            options = incorrect_ans + [correct_ans]
+            random.shuffle(options)
+            correct_id = options.index(correct_ans)
+            
+            return {
+                "question": question,
+                "options": options,
+                "correct_id": correct_id,
+                "explanation": f"Correct Answer: {correct_ans}"
+            }
+    except Exception as e:
+        logging.error(f"Quiz Fetch Error: {e}")
+        
+    # Backup static question if API lags
+    return {
+        "question": "Demon Slayer mein Tanjiro ki behen ka naam kya hai?",
         "options": ["Nezuko", "Kanao", "Mitsuri", "Shinobu"],
         "correct_id": 0,
-        "explanation": "Tanjiro ki behen ka naam Nezuko Kamado hai."
-    },
-    {
-        "question": "Naruto mein Nine-Tailed Fox ka asli naam kya hai?",
-        "options": ["Shukaku", "Kurama", "Gyuki", "Matatabi"],
-        "correct_id": 1,
-        "explanation": "Nine-Tailed Fox ka asli naam Kurama hai."
-    },
-    {
-        "question": "One Piece mein Luffy ka ultimate goal kya hai?",
-        "options": ["Marine Admiral banna", "King of the Pirates banna", "Greatest Swordsman banna", "All Blue dhoondna"],
-        "correct_id": 1,
-        "explanation": "Luffy ka goal King of the Pirates banna hai."
-    },
-    {
-        "question": "Attack on Titan mein Eren Yeager ke paas sabse pehle kaun sa Titan tha?",
-        "options": ["Armored Titan", "Colossal Titan", "Attack Titan", "Beast Titan"],
-        "correct_id": 2,
-        "explanation": "Eren ke paas pehle Attack Titan tha."
-    },
-    {
-        "question": "Death Note anime mein 'L' ka real name kya hai?",
-        "options": ["Light Yagami", "L Lawliet", "Mello", "Near"],
-        "correct_id": 1,
-        "explanation": "L ka asli naam L Lawliet hai."
-    },
-    {
-        "question": "Jujutsu Kaisen mein Gojo Satoru ki sabse famous technique kaun si hai?",
-        "options": ["Domain Expansion: Infinite Void", "Black Flash", "Boogie Woogie", "Malevolent Shrine"],
-        "correct_id": 0,
-        "explanation": "Gojo Satoru ka Domain Expansion 'Infinite Void' hai."
-    },
-    {
-        "question": "Dragon Ball Z mein Goku kis planet se belongs karta hai?",
-        "options": ["Planet Namek", "Planet Vegeta", "Earth", "Planet Kai"],
-        "correct_id": 1,
-        "explanation": "Goku ek Saiyan hai jo Planet Vegeta se aaya tha."
-    },
-    {
-        "question": "Solo Leveling mein Sung Jin-Woo ki class transform ho kar kya banti hai?",
-        "options": ["Shadow Monarch / Necromancer", "Assassin", "Mage", "Tanker"],
-        "correct_id": 0,
-        "explanation": "Sung Jin-Woo ki class Necromancer se Shadow Monarch ban jaati hai."
+        "explanation": "Correct Answer: Nezuko Kamado"
     }
-]
 
 # --- HIGH-LEVEL INTELLIGENCE ENGINE ---
 def get_groq_response(chat_id, prompt_text, user_name="Boss"):
@@ -299,7 +278,6 @@ def start_cmd(message):
     user_id = message.from_user.id
     user_name = message.from_user.first_name or "User"
 
-    # OWNER / ADMIN START RESPONSE
     if user_id == OWNER_ID:
         total_chats, users_count, groups_count, channels_count = get_chat_metrics()
         quiz_played = get_quiz_total_played()
@@ -335,7 +313,6 @@ def start_cmd(message):
         bot.reply_to(message, format_text(owner_dashboard), parse_mode="Markdown")
         return
 
-    # REGULAR USER START RESPONSE
     msg_1 = (
         f"🤖 **Hello {user_name}! Main J.A.R.V.I.S. hoon — aapka personal AI assistant.**\n\n"
         f"Main aapki har cheez me help kar sakta hoon: coding, writing, questions, general knowledge, ya koi bhi problem solve karne me! Sida question puchiye."
@@ -348,12 +325,13 @@ def start_cmd(message):
     bot.reply_to(message, format_text(msg_1), parse_mode="Markdown")
     bot.send_message(message.chat.id, format_text(msg_2), parse_mode="Markdown")
 
-# --- ANIME QUIZ COMMAND HANDLER ---
+# --- UNLIMITED DYNAMIC ANIME QUIZ HANDLER ---
 @bot.message_handler(commands=['quiz', 'game'])
 def anime_quiz_cmd(message):
     register_chat(message.chat.id, message.chat.type)
     record_quiz_play(message.chat.id)
-    quiz_item = random.choice(ANIME_QUIZ_DATA)
+    
+    quiz_item = fetch_dynamic_anime_quiz()
     
     bot.send_poll(
         chat_id=message.chat.id,
@@ -526,4 +504,44 @@ def handle_voice_chat(message):
                     parse_mode="Markdown"
                 )
             except Exception:
+                bot.send_voice(
+                    message.chat.id, 
+                    voice=voice, 
+                    caption=f"🎙️ J.A.R.V.I.S. (Voice):\n\n{clean_text[:900]}...\n\n⚡ Powered by - Anime Nation"
+                )
+
+    except Exception as e:
+        bot.reply_to(message, format_text(f"Voice Synthesis Error: `{e}`"), parse_mode="Markdown")
+
+# --- MAIN AI CHAT HANDLER ---
+@bot.message_handler(func=lambda message: True)
+def handle_ai_chat(message):
+    register_chat(message.chat.id, message.chat.type)
+    user_name = message.from_user.first_name or "User"
     
+    clean_prompt = message.text
+    if clean_prompt.startswith('/'):
+        clean_prompt = clean_prompt.split(' ', 1)[-1]
+
+    try:
+        bot.send_chat_action(message.chat.id, 'typing')
+        ai_reply = get_groq_response(message.chat.id, clean_prompt, user_name=user_name)
+        
+        try:
+            bot.reply_to(message, format_text(ai_reply), parse_mode="Markdown")
+        except Exception:
+            plain_footer = "⚡ Powered by - Anime Nation"
+            bot.reply_to(message, f"{ai_reply}\n\n{plain_footer}")
+
+    except Exception as e:
+        bot.reply_to(message, format_text(f"System Error: `{e}`"), parse_mode="Markdown")
+
+# --- ENTRYPOINT ---
+if __name__ == "__main__":
+    keep_alive()
+    try:
+        bot.delete_webhook(drop_pending_updates=True)
+    except Exception as e:
+        logging.warning(f"Webhook cleanup note: {e}")
+        
+    bot.infinity_polling(timeout=10, long_polling_timeout=5, allowed_updates=['message', 'my_chat_member', 'channel_post'])
