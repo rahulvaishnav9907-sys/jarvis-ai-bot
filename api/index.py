@@ -12,12 +12,12 @@ from flask import Flask
 
 logging.basicConfig(level=logging.INFO)
 
-# --- FLASK DUMMY SERVER FOR RENDER PORT BINDING (Anti-Sleep) ---
+# --- FLASK SERVER FOR RENDER PORT BINDING (24/7 ANTI-SLEEP) ---
 app = Flask('')
 
 @app.route('/')
 def home():
-    return "J.A.R.V.I.S. Cinematic & High-Intelligence Core Active!"
+    return "J.A.R.V.I.S. AI Engine Active & Operational!"
 
 def run_web():
     port = int(os.environ.get("PORT", 8080))
@@ -48,7 +48,6 @@ DB_FILE = "jarvis_users.db"
 def init_db():
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
-    # Chats tracking table
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS chats (
             chat_id INTEGER PRIMARY KEY,
@@ -56,7 +55,6 @@ def init_db():
             registered_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')
-    # Context Memory table
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS memory (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -86,11 +84,11 @@ def save_memory(chat_id, role, content):
         conn = sqlite3.connect(DB_FILE)
         cursor = conn.cursor()
         cursor.execute("INSERT INTO memory (chat_id, role, content) VALUES (?, ?, ?)", (chat_id, role, content))
-        # Keep last 12 messages per chat for smooth conversation memory
+        # Keep last 10 messages for conversation continuity
         cursor.execute('''
             DELETE FROM memory 
             WHERE chat_id = ? AND id NOT IN (
-                SELECT id FROM memory WHERE chat_id = ? ORDER BY id DESC LIMIT 12
+                SELECT id FROM memory WHERE chat_id = ? ORDER BY id DESC LIMIT 10
             )
         ''', (chat_id, chat_id))
         conn.commit()
@@ -141,10 +139,10 @@ def get_current_ist_datetime():
     now = datetime.datetime.now(ist)
     return now.strftime("%I:%M %p"), now.strftime("%A, %B %d, %Y")
 
-# --- HIGH-LEVEL CINEMATIC INTELLIGENCE ENGINE ---
-def get_groq_response(chat_id, prompt_text, user_name="Sir"):
+# --- CHATGPT / GEMINI STYLE HIGH-LEVEL INTELLIGENCE ENGINE ---
+def get_groq_response(chat_id, prompt_text, user_name="Boss"):
     if not GROQ_API_KEY:
-        return "Boss, GROQ_API_KEY environment variable missing hai. Systems offline."
+        return "GROQ_API_KEY environment variable missing hai."
     
     current_time, current_date = get_current_ist_datetime()
     history = get_chat_history(chat_id)
@@ -152,13 +150,15 @@ def get_groq_response(chat_id, prompt_text, user_name="Sir"):
     system_instruction = {
         "role": "system",
         "content": (
-            f"You are J.A.R.V.I.S., the iconic, hyper-intelligent AI assistant created for your Boss, '{user_name}'. "
-            f"You are NOT a boring corporate bot. You have British sophistication, sharp wit, clever humor, and absolute loyalty to your Boss. "
-            f"Always refer to the user respectfully as 'Boss' or '{user_name}'. "
-            f"Real-time System Date: {current_date}. Real-time System Time (IST): {current_time}. "
-            f"For casual chats, speak with style, clever sarcasm, and cinematic charm (like Tony Stark's J.A.R.V.I.S.). "
-            f"For technical, coding, or complex queries, deliver world-class precision while keeping your cool, confident demeanor. "
-            f"Clean Markdown only — avoid unclosed special characters."
+            f"You are J.A.R.V.I.S., a state-of-the-art AI assistant similar to ChatGPT and Gemini. "
+            f"You are talking to '{user_name}'.\n"
+            f"RULES:\n"
+            f"1. Be direct, clear, highly intelligent, and natural. Match response length strictly to user intent.\n"
+            f"2. For simple queries or greetings, reply in 1-2 concise, helpful sentences.\n"
+            f"3. For technical, coding, or analytical queries, provide comprehensive, well-structured answers using Markdown code blocks and clear formatting.\n"
+            f"4. Real-time context: Time = {current_time} IST, Date = {current_date}.\n"
+            f"5. IMPORTANT: Never mention time or date unless the user explicitly asks for time, date, or schedule.\n"
+            f"6. Do not generate unclosed Markdown syntax."
         )
     }
 
@@ -172,7 +172,7 @@ def get_groq_response(chat_id, prompt_text, user_name="Sir"):
     payload = {
         "model": "llama-3.3-70b-versatile",
         "messages": messages,
-        "temperature": 0.65,
+        "temperature": 0.5,
         "max_tokens": 2048,
         "top_p": 0.95
     }
@@ -186,7 +186,7 @@ def get_groq_response(chat_id, prompt_text, user_name="Sir"):
             return reply
     except Exception as e:
         logging.error(f"Groq AI Error: {e}")
-    return "Boss, neural processing main temporary glitch aaya hai. Re-analyzing..."
+    return "Neural system mein temporary delay aaya hai. Please retry."
 
 # --- AUTOMATIC REGISTRATION HANDLERS ---
 @bot.channel_post_handler(func=lambda message: True)
@@ -203,22 +203,22 @@ def start_cmd(message):
     register_chat(message.chat.id, message.chat.type)
     user_name = message.from_user.first_name or "Boss"
     welcome_text = (
-        f"🤖 **J.A.R.V.I.S. CINEMATIC CORE ONLINE**\n"
+        f"🤖 **J.A.R.V.I.S. AI CORE ONLINE**\n"
         f"━━━━━━━━━━━━━━━━━━━━━━\n"
-        f"At your service, {user_name}. All systems fully operational and standing by.\n\n"
-        f"📊 **System Controls:**\n"
-        f"• `/support_status` : Support Bot Diagnostics\n"
-        f"• `/v <message>` : Deep Voice Neural Synthesis\n"
-        f"• `/broadcast <msg>` : Multi-Channel Global Broadcast\n"
-        f"• `/stats` : Live System Metrics & User Count\n"
-        f"• `/owner` : Owner Identity Verification"
+        f"Hello {user_name}! How can I assist you today?\n\n"
+        f"📊 **System Commands:**\n"
+        f"• `/support_status` : Check Support Bot\n"
+        f"• `/v <message>` : Voice Assistant Mode\n"
+        f"• `/broadcast <msg>` : Multi-Channel Broadcast\n"
+        f"• `/stats` : System Metrics\n"
+        f"• `/owner` : Owner Identity Check"
     )
     bot.reply_to(message, format_text(welcome_text), parse_mode="Markdown")
 
 @bot.message_handler(commands=['broadcast'])
 def broadcast_cmd(message):
     if message.from_user.id != OWNER_ID:
-        bot.reply_to(message, format_text("⚠️ Access Denied: Protocol restricted to Boss only."), parse_mode="Markdown")
+        bot.reply_to(message, format_text("⚠️ Access Denied: Authorized for Boss only."), parse_mode="Markdown")
         return
 
     broadcast_msg = message.text.replace('/broadcast', '').strip()
@@ -272,7 +272,7 @@ def broadcast_cmd(message):
 def stats_cmd(message):
     register_chat(message.chat.id, message.chat.type)
     if message.from_user.id != OWNER_ID:
-        bot.reply_to(message, format_text("⚠️ Access Denied: Protocol restricted to Boss only."), parse_mode="Markdown")
+        bot.reply_to(message, format_text("⚠️ Access Denied: Authorized for Boss only."), parse_mode="Markdown")
         return
 
     total_users = get_total_chats()
@@ -292,11 +292,10 @@ def stats_cmd(message):
     current_time, current_date = get_current_ist_datetime()
 
     stats_msg = (
-        f"📊 **HIGH-LEVEL SYSTEM METRICS REPORT**\n"
+        f"📊 **SYSTEM METRICS REPORT**\n"
         f"━━━━━━━━━━━━━━━━━━━━━━\n\n"
         f"🤖 **J.A.R.V.I.S. AI ENGINE**\n"
-        f"• **Architecture:** Llama-3.3-70B (Cinematic Persona)\n"
-        f"• **Context Memory:** Active (SQLite Persistent)\n"
+        f"• **Architecture:** Llama-3.3-70B (ChatGPT/Gemini Spec)\n"
         f"• **Total Registered Chats:** `{total_users}`\n"
         f"• **Status:** 🟢 Active & Operational\n\n"
         f"🎧 **SUPPORT BOT ({support_username})**\n"
@@ -337,7 +336,7 @@ def owner_cmd(message):
     register_chat(message.chat.id, message.chat.type)
     user_name = message.from_user.first_name or "Boss"
     if message.from_user.id == OWNER_ID:
-        bot.reply_to(message, format_text(f"👑 **Boss Access Confirmed.** Always at your command, {user_name}!"), parse_mode="Markdown")
+        bot.reply_to(message, format_text(f"👑 **Boss Access Confirmed.** Welcome back, {user_name}!"), parse_mode="Markdown")
     else:
         bot.reply_to(message, format_text("Restricted to Boss."), parse_mode="Markdown")
 
@@ -347,7 +346,7 @@ def handle_voice_chat(message):
     user_name = message.from_user.first_name or "Boss"
     user_query = message.text.replace('/voice', '').replace('/v', '').strip()
     if not user_query:
-        bot.reply_to(message, format_text("Boss, please query likhein voice synthesis ke liye."), parse_mode="Markdown")
+        bot.reply_to(message, format_text("Query likhein voice response ke liye."), parse_mode="Markdown")
         return
 
     try:
@@ -373,20 +372,20 @@ def handle_voice_chat(message):
                 bot.send_voice(
                     message.chat.id, 
                     voice=voice, 
-                    caption=format_text(f"🎙️ **J.A.R.V.I.S. (Deep Voice):**\n\n{ai_reply[:900]}..."), 
+                    caption=format_text(f"🎙️ **J.A.R.V.I.S. (Voice):**\n\n{ai_reply[:900]}..."), 
                     parse_mode="Markdown"
                 )
             except Exception:
                 bot.send_voice(
                     message.chat.id, 
                     voice=voice, 
-                    caption=f"🎙️ J.A.R.V.I.S. (Deep Voice):\n\n{clean_text[:900]}...\n\n⚡ Powered by - Anime Nation"
+                    caption=f"🎙️ J.A.R.V.I.S. (Voice):\n\n{clean_text[:900]}...\n\n⚡ Powered by - Anime Nation"
                 )
 
     except Exception as e:
         bot.reply_to(message, format_text(f"Voice Synthesis Error: `{e}`"), parse_mode="Markdown")
 
-# --- MAIN AI CHAT HANDLER WITH SAFE FALLBACK ---
+# --- MAIN AI CHAT HANDLER ---
 @bot.message_handler(func=lambda message: True)
 def handle_ai_chat(message):
     register_chat(message.chat.id, message.chat.type)
@@ -400,18 +399,18 @@ def handle_ai_chat(message):
         bot.send_chat_action(message.chat.id, 'typing')
         ai_reply = get_groq_response(message.chat.id, clean_prompt, user_name=user_name)
         
-        # 1. Primary: Try sending with Markdown formatting
+        # 1. Primary: Send with Markdown formatting
         try:
             bot.reply_to(message, format_text(ai_reply), parse_mode="Markdown")
         except Exception:
-            # 2. Fallback: Send as Plain Text if Markdown fails (Prevents 400 Bad Request error)
+            # 2. Fallback: Send as Plain Text if Markdown parsing fails
             plain_footer = "⚡ Powered by - Anime Nation"
             bot.reply_to(message, f"{ai_reply}\n\n{plain_footer}")
 
     except Exception as e:
-        bot.reply_to(message, format_text(f"Neural Core Exception: `{e}`"), parse_mode="Markdown")
+        bot.reply_to(message, format_text(f"System Error: `{e}`"), parse_mode="Markdown")
 
-# --- BOT ENTRYPOINT ---
+# --- ENTRYPOINT ---
 if __name__ == "__main__":
     keep_alive()
     try:
@@ -420,4 +419,3 @@ if __name__ == "__main__":
         logging.warning(f"Webhook cleanup note: {e}")
         
     bot.infinity_polling(timeout=10, long_polling_timeout=5, allowed_updates=['message', 'my_chat_member', 'channel_post'])
-    
