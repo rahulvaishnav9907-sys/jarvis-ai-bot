@@ -18,7 +18,7 @@ app = Flask('')
 
 @app.route('/')
 def home():
-    return "J.A.R.V.I.S. AI Engine with Anime Quiz Active!"
+    return "J.A.R.V.I.S. AI Engine Active & Operational!"
 
 def run_web():
     port = int(os.environ.get("PORT", 8080))
@@ -49,6 +49,7 @@ DB_FILE = "jarvis_users.db"
 def init_db():
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
+    # Chats tracking table
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS chats (
             chat_id INTEGER PRIMARY KEY,
@@ -56,6 +57,7 @@ def init_db():
             registered_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')
+    # Context Memory table
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS memory (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -63,6 +65,14 @@ def init_db():
             role TEXT,
             content TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    # Quiz stats table
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS quiz_stats (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            chat_id INTEGER,
+            played_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')
     conn.commit()
@@ -79,6 +89,27 @@ def register_chat(chat_id, chat_type="private"):
         conn.close()
     except Exception as e:
         logging.error(f"DB Error: {e}")
+
+def record_quiz_play(chat_id):
+    try:
+        conn = sqlite3.connect(DB_FILE)
+        cursor = conn.cursor()
+        cursor.execute("INSERT INTO quiz_stats (chat_id) VALUES (?)", (chat_id,))
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        logging.error(f"Quiz Stat Save Error: {e}")
+
+def get_quiz_total_played():
+    try:
+        conn = sqlite3.connect(DB_FILE)
+        cursor = conn.cursor()
+        cursor.execute("SELECT COUNT(*) FROM quiz_stats")
+        count = cursor.fetchone()[0]
+        conn.close()
+        return count
+    except Exception:
+        return 0
 
 def save_memory(chat_id, role, content):
     try:
@@ -107,16 +138,27 @@ def get_chat_history(chat_id):
     except Exception:
         return []
 
-def get_total_chats():
+def get_chat_metrics():
     try:
         conn = sqlite3.connect(DB_FILE)
         cursor = conn.cursor()
+        
         cursor.execute("SELECT COUNT(*) FROM chats")
-        count = cursor.fetchone()[0]
+        total = cursor.fetchone()[0]
+        
+        cursor.execute("SELECT COUNT(*) FROM chats WHERE chat_type = 'private'")
+        users = cursor.fetchone()[0]
+        
+        cursor.execute("SELECT COUNT(*) FROM chats WHERE chat_type IN ('group', 'supergroup')")
+        groups = cursor.fetchone()[0]
+        
+        cursor.execute("SELECT COUNT(*) FROM chats WHERE chat_type = 'channel'")
+        channels = cursor.fetchone()[0]
+        
         conn.close()
-        return count
+        return total, users, groups, channels
     except Exception:
-        return 0
+        return 0, 0, 0, 0
 
 def get_all_chats():
     try:
@@ -163,7 +205,7 @@ ANIME_QUIZ_DATA = [
         "question": "Attack on Titan mein Eren Yeager ke paas sabse pehle kaun sa Titan tha?",
         "options": ["Armored Titan", "Colossal Titan", "Attack Titan", "Beast Titan"],
         "correct_id": 2,
-        "explanation": "Eren ke paas pehle Attack Titan tha (baad mein Founding Titan bhi mila)."
+        "explanation": "Eren ke paas pehle Attack Titan tha."
     },
     {
         "question": "Death Note anime mein 'L' ka real name kya hai?",
@@ -191,7 +233,7 @@ ANIME_QUIZ_DATA = [
     }
 ]
 
-# --- CHATGPT / GEMINI STYLE HIGH-LEVEL INTELLIGENCE ENGINE ---
+# --- HIGH-LEVEL INTELLIGENCE ENGINE ---
 def get_groq_response(chat_id, prompt_text, user_name="Boss"):
     if not GROQ_API_KEY:
         return "GROQ_API_KEY environment variable missing hai."
@@ -202,15 +244,16 @@ def get_groq_response(chat_id, prompt_text, user_name="Boss"):
     system_instruction = {
         "role": "system",
         "content": (
-            f"You are J.A.R.V.I.S., a state-of-the-art AI assistant similar to ChatGPT and Gemini. "
+            f"You are J.A.R.V.I.S., an advanced AI assistant created and owned by 'Anime Nation'. "
             f"You are talking to '{user_name}'.\n"
-            f"RULES:\n"
-            f"1. Be direct, clear, highly intelligent, and natural. Match response length strictly to user intent.\n"
-            f"2. For simple queries or greetings, reply in 1-2 concise, helpful sentences.\n"
-            f"3. For technical, coding, or analytical queries, provide comprehensive, well-structured answers using Markdown code blocks and clear formatting.\n"
-            f"4. Real-time context: Time = {current_time} IST, Date = {current_date}.\n"
-            f"5. IMPORTANT: Never mention time or date unless the user explicitly asks for time, date, or schedule.\n"
-            f"6. Do not generate unclosed Markdown syntax."
+            f"STRICT RULES:\n"
+            f"1. Your Owner/Creator is strictly 'Anime Nation'. Never mention Tony Stark or Iron Man under any circumstances.\n"
+            f"2. Be direct, clear, highly intelligent, and natural. Match response length strictly to user intent.\n"
+            f"3. For simple queries or greetings, reply in 1-2 concise, helpful sentences.\n"
+            f"4. For technical, coding, or analytical queries, provide comprehensive, well-structured answers using Markdown.\n"
+            f"5. Real-time context: Time = {current_time} IST, Date = {current_date}.\n"
+            f"6. IMPORTANT: Never mention time or date unless explicitly asked.\n"
+            f"7. Do not generate unclosed Markdown syntax."
         )
     }
 
@@ -249,30 +292,67 @@ def track_channel_posts(message):
 def track_my_status(message):
     register_chat(message.chat.id, message.chat.type)
 
-# --- COMMAND HANDLERS ---
+# --- START / HELP COMMAND HANDLER ---
 @bot.message_handler(commands=['start', 'help'])
 def start_cmd(message):
     register_chat(message.chat.id, message.chat.type)
-    user_name = message.from_user.first_name or "Boss"
-    welcome_text = (
-        f"🤖 **J.A.R.V.I.S. AI CORE ONLINE**\n"
-        f"━━━━━━━━━━━━━━━━━━━━━━\n"
-        f"Hello {user_name}! How can I assist you today?\n\n"
-        f"🎮 **Games & Fun:**\n"
-        f"• `/quiz` : Play Anime Trivia Quiz\n\n"
-        f"📊 **System Commands:**\n"
-        f"• `/support_status` : Check Support Bot\n"
-        f"• `/v <message>` : Voice Assistant Mode\n"
-        f"• `/broadcast <msg>` : Multi-Channel Broadcast\n"
-        f"• `/stats` : System Metrics\n"
-        f"• `/owner` : Owner Identity Check"
+    user_id = message.from_user.id
+    user_name = message.from_user.first_name or "User"
+
+    # OWNER / ADMIN START RESPONSE
+    if user_id == OWNER_ID:
+        total_chats, users_count, groups_count, channels_count = get_chat_metrics()
+        quiz_played = get_quiz_total_played()
+
+        support_status_text = "🔴 Offline / Unknown"
+        if SUPPORT_BOT_TOKEN:
+            try:
+                url = f"https://api.telegram.org/bot{SUPPORT_BOT_TOKEN}/getMe"
+                res = requests.get(url, timeout=5).json()
+                if res.get("ok"):
+                    support_status_text = f"🟢 Active (@{res['result']['username']})"
+            except Exception:
+                support_status_text = "🔴 Unreachable"
+
+        owner_dashboard = (
+            f"👑 **OWNER CONTROL PANEL**\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"Welcome back, Boss ({user_name})!\n\n"
+            f"📊 **SYSTEM STATUS & METRICS:**\n"
+            f"• **Support Bot Status:** {support_status_text}\n"
+            f"• **Total Bot Users:** `{users_count}`\n"
+            f"• **Total Channels & Groups Joined:** `{groups_count + channels_count}` (`{groups_count}` Groups | `{channels_count}` Channels)\n"
+            f"• **Anime Quiz Game Played:** `{quiz_played}` times\n\n"
+            f"🛠️ **ALL BOT COMMANDS:**\n"
+            f"• `/start` : Reload Control Dashboard\n"
+            f"• `/quiz` : Play Anime Trivia Quiz\n"
+            f"• `/v <msg>` : Voice Synthesis Response\n"
+            f"• `/broadcast <msg>` : Global Broadcast\n"
+            f"• `/stats` : Detailed System Analytics\n"
+            f"• `/support_status` : Direct Support Bot Check\n"
+            f"• `/owner` : Owner Identity Status"
+        )
+        bot.reply_to(message, format_text(owner_dashboard), parse_mode="Markdown")
+        return
+
+    # REGULAR USER START RESPONSE
+    msg_1 = (
+        f"🤖 **Hello {user_name}! Main J.A.R.V.I.S. hoon — aapka personal AI assistant.**\n\n"
+        f"Main aapki har cheez me help kar sakta hoon: coding, writing, questions, general knowledge, ya koi bhi problem solve karne me! Sida question puchiye."
     )
-    bot.reply_to(message, format_text(welcome_text), parse_mode="Markdown")
+    msg_2 = (
+        f"🎮 **Is bot me Anime Quiz Game bhi hai!**\n\n"
+        f"Aap `/quiz` command type karke anime trivia game khel sakte hain aur apna anime knowledge test kar sakte hain!"
+    )
+    
+    bot.reply_to(message, format_text(msg_1), parse_mode="Markdown")
+    bot.send_message(message.chat.id, format_text(msg_2), parse_mode="Markdown")
 
 # --- ANIME QUIZ COMMAND HANDLER ---
 @bot.message_handler(commands=['quiz', 'game'])
 def anime_quiz_cmd(message):
     register_chat(message.chat.id, message.chat.type)
+    record_quiz_play(message.chat.id)
     quiz_item = random.choice(ANIME_QUIZ_DATA)
     
     bot.send_poll(
@@ -288,7 +368,7 @@ def anime_quiz_cmd(message):
 @bot.message_handler(commands=['broadcast'])
 def broadcast_cmd(message):
     if message.from_user.id != OWNER_ID:
-        bot.reply_to(message, format_text("⚠️ Access Denied: Authorized for Boss only."), parse_mode="Markdown")
+        bot.reply_to(message, format_text("⚠️ Access Denied: Authorized for Owner (Anime Nation) only."), parse_mode="Markdown")
         return
 
     broadcast_msg = message.text.replace('/broadcast', '').strip()
@@ -342,10 +422,12 @@ def broadcast_cmd(message):
 def stats_cmd(message):
     register_chat(message.chat.id, message.chat.type)
     if message.from_user.id != OWNER_ID:
-        bot.reply_to(message, format_text("⚠️ Access Denied: Authorized for Boss only."), parse_mode="Markdown")
+        bot.reply_to(message, format_text("⚠️ Access Denied: Authorized for Owner (Anime Nation) only."), parse_mode="Markdown")
         return
 
-    total_users = get_total_chats()
+    total_chats, users_count, groups_count, channels_count = get_chat_metrics()
+    quiz_played = get_quiz_total_played()
+    
     support_status_text = "🔴 Offline / Unknown"
     support_username = "@TEAMNATI0Nbot"
     
@@ -365,9 +447,10 @@ def stats_cmd(message):
         f"📊 **SYSTEM METRICS REPORT**\n"
         f"━━━━━━━━━━━━━━━━━━━━━━\n\n"
         f"🤖 **J.A.R.V.I.S. AI ENGINE**\n"
-        f"• **Architecture:** Llama-3.3-70B (ChatGPT/Gemini Spec)\n"
-        f"• **Total Registered Chats:** `{total_users}`\n"
-        f"• **Features:** Anime Quiz & Context Memory\n"
+        f"• **Owner:** Anime Nation\n"
+        f"• **Total Registered Users:** `{users_count}`\n"
+        f"• **Total Channels & Groups Joined:** `{groups_count + channels_count}` (`{groups_count}` Groups | `{channels_count}` Channels)\n"
+        f"• **Anime Quiz Played Total:** `{quiz_played}` times\n"
         f"• **Status:** 🟢 Active & Operational\n\n"
         f"🎧 **SUPPORT BOT ({support_username})**\n"
         f"• **Status:** {support_status_text}\n\n"
@@ -380,7 +463,7 @@ def stats_cmd(message):
 def check_support_status(message):
     register_chat(message.chat.id, message.chat.type)
     if not SUPPORT_BOT_TOKEN:
-        bot.reply_to(message, format_text("⚠️ Boss, `SUPPORT_BOT_TOKEN` configured nahi hai."), parse_mode="Markdown")
+        bot.reply_to(message, format_text("⚠️ `SUPPORT_BOT_TOKEN` configured nahi hai."), parse_mode="Markdown")
         return
 
     try:
@@ -397,7 +480,7 @@ def check_support_status(message):
             )
         else:
             bot.send_message(OWNER_ID, format_text("🚨 **ALERT: SUPPORT BOT IS OFFLINE!**"), parse_mode="Markdown")
-            bot.reply_to(message, format_text("🔴 **SUPPORT BOT IS OFFLINE!** Alert sent to Boss."), parse_mode="Markdown")
+            bot.reply_to(message, format_text("🔴 **SUPPORT BOT IS OFFLINE!** Alert sent to Owner."), parse_mode="Markdown")
     except Exception as e:
         bot.send_message(OWNER_ID, format_text(f"🚨 **ALERT: UNREACHABLE!**\nError: `{e}`"), parse_mode="Markdown")
         bot.reply_to(message, format_text(f"🔴 **SUPPORT BOT UNREACHABLE!**\nError: `{e}`"), parse_mode="Markdown")
@@ -405,16 +488,12 @@ def check_support_status(message):
 @bot.message_handler(commands=['owner'])
 def owner_cmd(message):
     register_chat(message.chat.id, message.chat.type)
-    user_name = message.from_user.first_name or "Boss"
-    if message.from_user.id == OWNER_ID:
-        bot.reply_to(message, format_text(f"👑 **Boss Access Confirmed.** Welcome back, {user_name}!"), parse_mode="Markdown")
-    else:
-        bot.reply_to(message, format_text("Restricted to Boss."), parse_mode="Markdown")
+    bot.reply_to(message, format_text("👑 **Owner & Developer:** Anime Nation"), parse_mode="Markdown")
 
 @bot.message_handler(commands=['v', 'voice'])
 def handle_voice_chat(message):
     register_chat(message.chat.id, message.chat.type)
-    user_name = message.from_user.first_name or "Boss"
+    user_name = message.from_user.first_name or "User"
     user_query = message.text.replace('/voice', '').replace('/v', '').strip()
     if not user_query:
         bot.reply_to(message, format_text("Query likhein voice response ke liye."), parse_mode="Markdown")
@@ -447,44 +526,4 @@ def handle_voice_chat(message):
                     parse_mode="Markdown"
                 )
             except Exception:
-                bot.send_voice(
-                    message.chat.id, 
-                    voice=voice, 
-                    caption=f"🎙️ J.A.R.V.I.S. (Voice):\n\n{clean_text[:900]}...\n\n⚡ Powered by - Anime Nation"
-                )
-
-    except Exception as e:
-        bot.reply_to(message, format_text(f"Voice Synthesis Error: `{e}`"), parse_mode="Markdown")
-
-# --- MAIN AI CHAT HANDLER ---
-@bot.message_handler(func=lambda message: True)
-def handle_ai_chat(message):
-    register_chat(message.chat.id, message.chat.type)
-    user_name = message.from_user.first_name or "Boss"
     
-    clean_prompt = message.text
-    if clean_prompt.startswith('/'):
-        clean_prompt = clean_prompt.split(' ', 1)[-1]
-
-    try:
-        bot.send_chat_action(message.chat.id, 'typing')
-        ai_reply = get_groq_response(message.chat.id, clean_prompt, user_name=user_name)
-        
-        try:
-            bot.reply_to(message, format_text(ai_reply), parse_mode="Markdown")
-        except Exception:
-            plain_footer = "⚡ Powered by - Anime Nation"
-            bot.reply_to(message, f"{ai_reply}\n\n{plain_footer}")
-
-    except Exception as e:
-        bot.reply_to(message, format_text(f"System Error: `{e}`"), parse_mode="Markdown")
-
-# --- ENTRYPOINT ---
-if __name__ == "__main__":
-    keep_alive()
-    try:
-        bot.delete_webhook(drop_pending_updates=True)
-    except Exception as e:
-        logging.warning(f"Webhook cleanup note: {e}")
-        
-    bot.infinity_polling(timeout=10, long_polling_timeout=5, allowed_updates=['message', 'my_chat_member', 'channel_post'])
