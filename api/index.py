@@ -2,6 +2,7 @@ import os
 import logging
 import asyncio
 import datetime
+import random
 import pytz
 import requests
 import telebot
@@ -17,7 +18,7 @@ app = Flask('')
 
 @app.route('/')
 def home():
-    return "J.A.R.V.I.S. AI Engine Active & Operational!"
+    return "J.A.R.V.I.S. AI Engine with Anime Quiz Active!"
 
 def run_web():
     port = int(os.environ.get("PORT", 8080))
@@ -84,7 +85,6 @@ def save_memory(chat_id, role, content):
         conn = sqlite3.connect(DB_FILE)
         cursor = conn.cursor()
         cursor.execute("INSERT INTO memory (chat_id, role, content) VALUES (?, ?, ?)", (chat_id, role, content))
-        # Keep last 10 messages for conversation continuity
         cursor.execute('''
             DELETE FROM memory 
             WHERE chat_id = ? AND id NOT IN (
@@ -138,6 +138,58 @@ def get_current_ist_datetime():
     ist = pytz.timezone('Asia/Kolkata')
     now = datetime.datetime.now(ist)
     return now.strftime("%I:%M %p"), now.strftime("%A, %B %d, %Y")
+
+# --- ANIME QUIZ QUESTIONS DATABASE ---
+ANIME_QUIZ_DATA = [
+    {
+        "question": "Demon Slayer (Kimetsu no Yaiba) mein Tanjiro ki behen ka naam kya hai?",
+        "options": ["Nezuko", "Kanao", "Mitsuri", "Shinobu"],
+        "correct_id": 0,
+        "explanation": "Tanjiro ki behen ka naam Nezuko Kamado hai."
+    },
+    {
+        "question": "Naruto mein Nine-Tailed Fox ka asli naam kya hai?",
+        "options": ["Shukaku", "Kurama", "Gyuki", "Matatabi"],
+        "correct_id": 1,
+        "explanation": "Nine-Tailed Fox ka asli naam Kurama hai."
+    },
+    {
+        "question": "One Piece mein Luffy ka ultimate goal kya hai?",
+        "options": ["Marine Admiral banna", "King of the Pirates banna", "Greatest Swordsman banna", "All Blue dhoondna"],
+        "correct_id": 1,
+        "explanation": "Luffy ka goal King of the Pirates banna hai."
+    },
+    {
+        "question": "Attack on Titan mein Eren Yeager ke paas sabse pehle kaun sa Titan tha?",
+        "options": ["Armored Titan", "Colossal Titan", "Attack Titan", "Beast Titan"],
+        "correct_id": 2,
+        "explanation": "Eren ke paas pehle Attack Titan tha (baad mein Founding Titan bhi mila)."
+    },
+    {
+        "question": "Death Note anime mein 'L' ka real name kya hai?",
+        "options": ["Light Yagami", "L Lawliet", "Mello", "Near"],
+        "correct_id": 1,
+        "explanation": "L ka asli naam L Lawliet hai."
+    },
+    {
+        "question": "Jujutsu Kaisen mein Gojo Satoru ki sabse famous technique kaun si hai?",
+        "options": ["Domain Expansion: Infinite Void", "Black Flash", "Boogie Woogie", "Malevolent Shrine"],
+        "correct_id": 0,
+        "explanation": "Gojo Satoru ka Domain Expansion 'Infinite Void' hai."
+    },
+    {
+        "question": "Dragon Ball Z mein Goku kis planet se belongs karta hai?",
+        "options": ["Planet Namek", "Planet Vegeta", "Earth", "Planet Kai"],
+        "correct_id": 1,
+        "explanation": "Goku ek Saiyan hai jo Planet Vegeta se aaya tha."
+    },
+    {
+        "question": "Solo Leveling mein Sung Jin-Woo ki class transform ho kar kya banti hai?",
+        "options": ["Shadow Monarch / Necromancer", "Assassin", "Mage", "Tanker"],
+        "correct_id": 0,
+        "explanation": "Sung Jin-Woo ki class Necromancer se Shadow Monarch ban jaati hai."
+    }
+]
 
 # --- CHATGPT / GEMINI STYLE HIGH-LEVEL INTELLIGENCE ENGINE ---
 def get_groq_response(chat_id, prompt_text, user_name="Boss"):
@@ -206,6 +258,8 @@ def start_cmd(message):
         f"🤖 **J.A.R.V.I.S. AI CORE ONLINE**\n"
         f"━━━━━━━━━━━━━━━━━━━━━━\n"
         f"Hello {user_name}! How can I assist you today?\n\n"
+        f"🎮 **Games & Fun:**\n"
+        f"• `/quiz` : Play Anime Trivia Quiz\n\n"
         f"📊 **System Commands:**\n"
         f"• `/support_status` : Check Support Bot\n"
         f"• `/v <message>` : Voice Assistant Mode\n"
@@ -214,6 +268,22 @@ def start_cmd(message):
         f"• `/owner` : Owner Identity Check"
     )
     bot.reply_to(message, format_text(welcome_text), parse_mode="Markdown")
+
+# --- ANIME QUIZ COMMAND HANDLER ---
+@bot.message_handler(commands=['quiz', 'game'])
+def anime_quiz_cmd(message):
+    register_chat(message.chat.id, message.chat.type)
+    quiz_item = random.choice(ANIME_QUIZ_DATA)
+    
+    bot.send_poll(
+        chat_id=message.chat.id,
+        question=f"⛩️ Anime Quiz: {quiz_item['question']}",
+        options=quiz_item['options'],
+        type='quiz',
+        correct_option_id=quiz_item['correct_id'],
+        explanation=quiz_item['explanation'],
+        is_anonymous=False
+    )
 
 @bot.message_handler(commands=['broadcast'])
 def broadcast_cmd(message):
@@ -297,6 +367,7 @@ def stats_cmd(message):
         f"🤖 **J.A.R.V.I.S. AI ENGINE**\n"
         f"• **Architecture:** Llama-3.3-70B (ChatGPT/Gemini Spec)\n"
         f"• **Total Registered Chats:** `{total_users}`\n"
+        f"• **Features:** Anime Quiz & Context Memory\n"
         f"• **Status:** 🟢 Active & Operational\n\n"
         f"🎧 **SUPPORT BOT ({support_username})**\n"
         f"• **Status:** {support_status_text}\n\n"
@@ -399,11 +470,9 @@ def handle_ai_chat(message):
         bot.send_chat_action(message.chat.id, 'typing')
         ai_reply = get_groq_response(message.chat.id, clean_prompt, user_name=user_name)
         
-        # 1. Primary: Send with Markdown formatting
         try:
             bot.reply_to(message, format_text(ai_reply), parse_mode="Markdown")
         except Exception:
-            # 2. Fallback: Send as Plain Text if Markdown parsing fails
             plain_footer = "⚡ Powered by - Anime Nation"
             bot.reply_to(message, f"{ai_reply}\n\n{plain_footer}")
 
