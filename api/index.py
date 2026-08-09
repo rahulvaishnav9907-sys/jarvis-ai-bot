@@ -14,12 +14,12 @@ from flask import Flask
 
 logging.basicConfig(level=logging.INFO)
 
-# --- FLASK SERVER FOR RENDER PORT BINDING (24/7 ANTI-SLEEP) ---
+# --- FLASK SERVER FOR RENDER PORT BINDING ---
 app = Flask('')
 
 @app.route('/')
 def home():
-    return "J.A.R.V.I.S. AI Engine Active & Operational!"
+    return "J.A.R.V.I.S. Core Engine Active!"
 
 def run_web():
     port = int(os.environ.get("PORT", 8080))
@@ -44,7 +44,15 @@ except ValueError:
 
 bot = telebot.TeleBot(BOT_TOKEN, threaded=False)
 
-# --- DATABASE & CONTEXT MEMORY SETUP ---
+# Fetch bot username for group mention triggers
+BOT_USERNAME = ""
+try:
+    bot_info = bot.get_me()
+    BOT_USERNAME = bot_info.username.lower()
+except Exception as e:
+    logging.error(f"Failed to fetch bot username: {e}")
+
+# --- DATABASE SETUP ---
 DB_FILE = "jarvis_users.db"
 
 def init_db():
@@ -71,6 +79,13 @@ def init_db():
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             chat_id INTEGER,
             played_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS support_logs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            action TEXT,
+            timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')
     conn.commit()
@@ -140,19 +155,14 @@ def get_chat_metrics():
     try:
         conn = sqlite3.connect(DB_FILE)
         cursor = conn.cursor()
-        
         cursor.execute("SELECT COUNT(*) FROM chats")
         total = cursor.fetchone()[0]
-        
         cursor.execute("SELECT COUNT(*) FROM chats WHERE chat_type = 'private'")
         users = cursor.fetchone()[0]
-        
         cursor.execute("SELECT COUNT(*) FROM chats WHERE chat_type IN ('group', 'supergroup')")
         groups = cursor.fetchone()[0]
-        
         cursor.execute("SELECT COUNT(*) FROM chats WHERE chat_type = 'channel'")
         channels = cursor.fetchone()[0]
-        
         conn.close()
         return total, users, groups, channels
     except Exception:
@@ -179,9 +189,8 @@ def get_current_ist_datetime():
     now = datetime.datetime.now(ist)
     return now.strftime("%I:%M %p"), now.strftime("%A, %B %d, %Y")
 
-# --- DYNAMIC 1000+ UNLIMITED ANIME QUIZ FETCH ENGINE ---
+# --- ANIME QUIZ FETCH ENGINE ---
 def fetch_dynamic_anime_quiz():
-    # Category 31 = Anime & Manga in OpenTDB
     url = "https://opentdb.com/api.php?amount=1&category=31&type=multiple"
     try:
         res = requests.get(url, timeout=5).json()
@@ -204,7 +213,6 @@ def fetch_dynamic_anime_quiz():
     except Exception as e:
         logging.error(f"Quiz Fetch Error: {e}")
         
-    # Backup static question if API lags
     return {
         "question": "Demon Slayer mein Tanjiro ki behen ka naam kya hai?",
         "options": ["Nezuko", "Kanao", "Mitsuri", "Shinobu"],
@@ -223,16 +231,14 @@ def get_groq_response(chat_id, prompt_text, user_name="Boss"):
     system_instruction = {
         "role": "system",
         "content": (
-            f"You are J.A.R.V.I.S., an advanced AI assistant created and owned by 'Anime Nation'. "
+            f"You are J.A.R.V.I.S., an advanced AI assistant created and owned strictly by 'Anime Nation'. "
             f"You are talking to '{user_name}'.\n"
             f"STRICT RULES:\n"
-            f"1. Your Owner/Creator is strictly 'Anime Nation'. Never mention Tony Stark or Iron Man under any circumstances.\n"
+            f"1. Your Owner/Creator is strictly 'Anime Nation'. Never mention Tony Stark or Iron Man.\n"
             f"2. Be direct, clear, highly intelligent, and natural. Match response length strictly to user intent.\n"
-            f"3. For simple queries or greetings, reply in 1-2 concise, helpful sentences.\n"
-            f"4. For technical, coding, or analytical queries, provide comprehensive, well-structured answers using Markdown.\n"
-            f"5. Real-time context: Time = {current_time} IST, Date = {current_date}.\n"
-            f"6. IMPORTANT: Never mention time or date unless explicitly asked.\n"
-            f"7. Do not generate unclosed Markdown syntax."
+            f"3. Real-time context: Time = {current_time} IST, Date = {current_date}.\n"
+            f"4. Never mention time or date unless explicitly asked.\n"
+            f"5. Do not generate unclosed Markdown syntax."
         )
     }
 
@@ -262,7 +268,7 @@ def get_groq_response(chat_id, prompt_text, user_name="Boss"):
         logging.error(f"Groq AI Error: {e}")
     return "Neural system mein temporary delay aaya hai. Please retry."
 
-# --- AUTOMATIC REGISTRATION HANDLERS ---
+# --- CHANNEL POST TRACKER & MANAGEMENT ---
 @bot.channel_post_handler(func=lambda message: True)
 def track_channel_posts(message):
     register_chat(message.chat.id, "channel")
@@ -271,7 +277,7 @@ def track_channel_posts(message):
 def track_my_status(message):
     register_chat(message.chat.id, message.chat.type)
 
-# --- START / HELP COMMAND HANDLER ---
+# --- COMMAND HANDLERS ---
 @bot.message_handler(commands=['start', 'help'])
 def start_cmd(message):
     register_chat(message.chat.id, message.chat.type)
@@ -299,16 +305,16 @@ def start_cmd(message):
             f"📊 **SYSTEM STATUS & METRICS:**\n"
             f"• **Support Bot Status:** {support_status_text}\n"
             f"• **Total Bot Users:** `{users_count}`\n"
-            f"• **Total Channels & Groups Joined:** `{groups_count + channels_count}` (`{groups_count}` Groups | `{channels_count}` Channels)\n"
-            f"• **Anime Quiz Game Played:** `{quiz_played}` times\n\n"
+            f"• **Channels & Groups:** `{groups_count + channels_count}` (`{groups_count}` Groups | `{channels_count}` Channels)\n"
+            f"• **Anime Quiz Played Total:** `{quiz_played}` times\n\n"
             f"🛠️ **ALL BOT COMMANDS:**\n"
             f"• `/start` : Reload Control Dashboard\n"
             f"• `/quiz` : Play Anime Trivia Quiz\n"
-            f"• `/v <msg>` : Voice Synthesis Response\n"
+            f"• `/v <msg>` : Voice Response Mode\n"
             f"• `/broadcast <msg>` : Global Broadcast\n"
-            f"• `/stats` : Detailed System Analytics\n"
-            f"• `/support_status` : Direct Support Bot Check\n"
-            f"• `/owner` : Owner Identity Status"
+            f"• `/stats` : System Analytics\n"
+            f"• `/support_status` : Support Bot Diagnostics\n"
+            f"• `/owner` : Owner Info"
         )
         bot.reply_to(message, format_text(owner_dashboard), parse_mode="Markdown")
         return
@@ -319,13 +325,12 @@ def start_cmd(message):
     )
     msg_2 = (
         f"🎮 **Is bot me Anime Quiz Game bhi hai!**\n\n"
-        f"Aap `/quiz` command type karke anime trivia game khel sakte hain aur apna anime knowledge test kar sakte hain!"
+        f"Aap `/quiz` command type karke anime trivia game khel sakte hain!"
     )
     
     bot.reply_to(message, format_text(msg_1), parse_mode="Markdown")
     bot.send_message(message.chat.id, format_text(msg_2), parse_mode="Markdown")
 
-# --- UNLIMITED DYNAMIC ANIME QUIZ HANDLER ---
 @bot.message_handler(commands=['quiz', 'game'])
 def anime_quiz_cmd(message):
     register_chat(message.chat.id, message.chat.type)
@@ -361,7 +366,6 @@ def broadcast_cmd(message):
     all_chats = get_all_chats()
     success = 0
     failed = 0
-    error_reasons = []
 
     for chat_id, chat_type in all_chats:
         if chat_id == OWNER_ID and len(all_chats) > 1:
@@ -375,24 +379,13 @@ def broadcast_cmd(message):
             )
             success += 1
         except Exception:
-            try:
-                bot.send_message(
-                    chat_id, 
-                    f"📢 J.A.R.V.I.S. BROADCAST ANNOUNCEMENT\n━━━━━━━━━━━━━━━━━━━━━━\n\n{clean_broadcast_msg}\n\n⚡ Powered by - Anime Nation"
-                )
-                success += 1
-            except Exception as e:
-                failed += 1
-                error_reasons.append(f"`{chat_id}`: {str(e)[:40]}")
-
-    error_log = "\n".join(error_reasons[:3]) if error_reasons else "None"
+            failed += 1
 
     report = (
         f"📊 **BROADCAST REPORT COMPLETE**\n"
         f"━━━━━━━━━━━━━━━━━━━━━━\n"
         f"🟢 **Successfully Delivered:** `{success}` chats\n"
-        f"🔴 **Failed / Removed:** `{failed}` chats\n\n"
-        f"⚠️ **Last Errors:**\n{error_log}"
+        f"🔴 **Failed / Removed:** `{failed}` chats"
     )
     bot.reply_to(message, format_text(report), parse_mode="Markdown")
 
@@ -513,13 +506,32 @@ def handle_voice_chat(message):
     except Exception as e:
         bot.reply_to(message, format_text(f"Voice Synthesis Error: `{e}`"), parse_mode="Markdown")
 
-# --- MAIN AI CHAT HANDLER ---
+# --- MAIN AI CHAT HANDLER (WITH GROUP TRIGGER CONTROL) ---
 @bot.message_handler(func=lambda message: True)
 def handle_ai_chat(message):
     register_chat(message.chat.id, message.chat.type)
     user_name = message.from_user.first_name or "User"
     
+    # 1. GROUP TRIGGER CONTROL FIX
+    if message.chat.type in ['group', 'supergroup']:
+        is_reply_to_bot = (
+            message.reply_to_message is not None and 
+            message.reply_to_message.from_user is not None and 
+            message.reply_to_message.from_user.id == bot.get_me().id
+        )
+        is_bot_mentioned = (
+            BOT_USERNAME != "" and 
+            BOT_USERNAME in message.text.lower()
+        )
+        
+        # If neither tagged nor replied to bot in group, IGNORE completely (Prevents spamming)
+        if not (is_reply_to_bot or is_bot_mentioned):
+            return
+
     clean_prompt = message.text
+    if BOT_USERNAME and f"@{BOT_USERNAME}" in clean_prompt.lower():
+        clean_prompt = clean_prompt.lower().replace(f"@{BOT_USERNAME}", "").strip()
+        
     if clean_prompt.startswith('/'):
         clean_prompt = clean_prompt.split(' ', 1)[-1]
 
@@ -528,20 +540,4 @@ def handle_ai_chat(message):
         ai_reply = get_groq_response(message.chat.id, clean_prompt, user_name=user_name)
         
         try:
-            bot.reply_to(message, format_text(ai_reply), parse_mode="Markdown")
-        except Exception:
-            plain_footer = "⚡ Powered by - Anime Nation"
-            bot.reply_to(message, f"{ai_reply}\n\n{plain_footer}")
-
-    except Exception as e:
-        bot.reply_to(message, format_text(f"System Error: `{e}`"), parse_mode="Markdown")
-
-# --- ENTRYPOINT ---
-if __name__ == "__main__":
-    keep_alive()
-    try:
-        bot.delete_webhook(drop_pending_updates=True)
-    except Exception as e:
-        logging.warning(f"Webhook cleanup note: {e}")
-        
-    bot.infinity_polling(timeout=10, long_polling_timeout=5, allowed_updates=['message', 'my_chat_member', 'channel_post'])
+            bot.reply_to(message, format_text(ai_reply), parse_
