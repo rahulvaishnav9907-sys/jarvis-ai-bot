@@ -81,13 +81,6 @@ def init_db():
             played_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS support_logs (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            action TEXT,
-            timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    ''')
     conn.commit()
     conn.close()
 
@@ -506,13 +499,12 @@ def handle_voice_chat(message):
     except Exception as e:
         bot.reply_to(message, format_text(f"Voice Synthesis Error: `{e}`"), parse_mode="Markdown")
 
-# --- MAIN AI CHAT HANDLER (WITH GROUP TRIGGER CONTROL) ---
+# --- MAIN AI CHAT HANDLER ---
 @bot.message_handler(func=lambda message: True)
 def handle_ai_chat(message):
     register_chat(message.chat.id, message.chat.type)
     user_name = message.from_user.first_name or "User"
     
-    # 1. GROUP TRIGGER CONTROL FIX
     if message.chat.type in ['group', 'supergroup']:
         is_reply_to_bot = (
             message.reply_to_message is not None and 
@@ -524,7 +516,6 @@ def handle_ai_chat(message):
             BOT_USERNAME in message.text.lower()
         )
         
-        # If neither tagged nor replied to bot in group, IGNORE completely (Prevents spamming)
         if not (is_reply_to_bot or is_bot_mentioned):
             return
 
@@ -540,4 +531,16 @@ def handle_ai_chat(message):
         ai_reply = get_groq_response(message.chat.id, clean_prompt, user_name=user_name)
         
         try:
-            bot.reply_to(message, format_text(ai_reply), parse_
+            bot.reply_to(message, format_text(ai_reply), parse_mode="Markdown")
+        except Exception:
+            plain_footer = "⚡ Powered by - Anime Nation"
+            bot.reply_to(message, f"{ai_reply}\n\n{plain_footer}")
+
+    except Exception as e:
+        bot.reply_to(message, format_text(f"System Error: `{e}`"), parse_mode="Markdown")
+
+# --- ENTRYPOINT ---
+if __name__ == "__main__":
+    keep_alive()
+    try:
+        bot.delete_webho
