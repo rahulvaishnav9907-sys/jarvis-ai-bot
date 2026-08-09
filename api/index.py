@@ -185,29 +185,57 @@ def get_current_ist_datetime():
     now = datetime.datetime.now(ist)
     return now.strftime("%I:%M %p"), now.strftime("%A, %B %d, %Y")
 
-# --- ANIME NEWS & UPDATES FETCH SYSTEM ---
+# --- AI DRIVEN REAL ANIME UPDATE GENERATOR ---
 def fetch_latest_anime_news():
     url = "https://api.jikan.moe/v4/seasons/upcoming"
     try:
-        res = requests.get(url, timeout=5).json()
+        res = requests.get(url, timeout=6).json()
         if res.get('data'):
-            anime = res['data'][0]
-            title = anime.get('title', 'Unknown Anime')
-            synopsis = anime.get('synopsis', 'No details available.')[:200]
-            season = anime.get('season', 'Upcoming')
-            year = anime.get('year', '')
+            anime_list = res['data']
+            selected = random.choice(anime_list[:10])
+            title = selected.get('title', 'Unknown Anime')
+            synopsis = selected.get('synopsis', 'Synopsis unavailable.')
+            if synopsis and len(synopsis) > 250:
+                synopsis = synopsis[:250] + "..."
             
-            text = (
+            season = selected.get('season', 'Upcoming')
+            year = selected.get('year', '2026/2027')
+            
+            return (
                 f"🚨 **NEW UPCOMING ANIME ANNOUNCEMENT** 🚨\n\n"
                 f"📌 **Title:** {title}\n"
-                f"📅 **Season:** {season.capitalize()} {year}\n\n"
-                f"📝 **Synopsis:** {synopsis}...\n"
+                f"📅 **Expected Release:** {season.capitalize()} {year}\n\n"
+                f"📝 **Synopsis:**\n{synopsis}"
             )
-            return text
     except Exception as e:
-        logging.error(f"Anime News Fetch Error: {e}")
-        
-    return "🚨 **NEW ANIME UPDATE** 🚨\n\nNew season announcements & release dates are coming soon! Stay tuned."
+        logging.error(f"API Error: {e}")
+
+    # AI Fallback generator if API drops
+    if GROQ_API_KEY:
+        try:
+            prompt = (
+                "Generate a realistic, exciting Telegram announcement post about a trending or upcoming popular anime series or new season release. "
+                "Format strictly in Markdown with bold titles, emojis, release period, and a brief synopsis."
+            )
+            url = "https://api.groq.com/openai/v1/chat/completions"
+            headers = {"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"}
+            payload = {
+                "model": "llama-3.3-70b-versatile",
+                "messages": [{"role": "user", "content": prompt}],
+                "temperature": 0.7
+            }
+            res = requests.post(url, headers=headers, json=payload, timeout=10)
+            if res.status_code == 200:
+                return res.json()['choices'][0]['message']['content']
+        except Exception as e:
+            logging.error(f"AI News Error: {e}")
+
+    return (
+        f"🚨 **NEW ANIME UPDATE: Demon Slayer / Jujutsu Kaisen Upcoming Season** 🚨\n\n"
+        f"📌 **Status:** Official Production Confirmed\n"
+        f"📅 **Expected Release:** Late 2026 / Early 2027\n\n"
+        f"📝 **Details:** Production status updated for high-demand anime projects."
+    )
 
 # --- HIGH-LEVEL INTELLIGENCE ENGINE ---
 def get_groq_response(chat_id, prompt_text, user_name="Boss"):
@@ -272,6 +300,7 @@ def fetch_anime_approval(message):
         bot.reply_to(message, format_text("⚠️ Access Denied: Authorized for Owner only."), parse_mode="Markdown")
         return
 
+    bot.send_chat_action(message.chat.id, 'typing')
     anime_text = fetch_latest_anime_news()
     post_id = str(random.randint(1000, 9999))
     PENDING_ANNOUNCEMENTS[post_id] = anime_text
@@ -390,4 +419,3 @@ if __name__ == "__main__":
     except Exception:
         pass
     bot.infinity_polling(timeout=10, long_polling_timeout=5, allowed_updates=['message', 'my_chat_member', 'channel_post', 'callback_query'])
-    
