@@ -6,6 +6,7 @@ import random
 import pytz
 import requests
 import telebot
+from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 import edge_tts
 import sqlite3
 import html
@@ -44,13 +45,15 @@ except ValueError:
 
 bot = telebot.TeleBot(BOT_TOKEN, threaded=False)
 
-# Fetch bot username for group mention triggers
 BOT_USERNAME = ""
 try:
     bot_info = bot.get_me()
     BOT_USERNAME = bot_info.username.lower()
 except Exception as e:
     logging.error(f"Failed to fetch bot username: {e}")
+
+# Pending approval cache
+PENDING_ANNOUNCEMENTS = {}
 
 # --- DATABASE SETUP ---
 DB_FILE = "jarvis_users.db"
@@ -182,36 +185,29 @@ def get_current_ist_datetime():
     now = datetime.datetime.now(ist)
     return now.strftime("%I:%M %p"), now.strftime("%A, %B %d, %Y")
 
-# --- ANIME QUIZ FETCH ENGINE ---
-def fetch_dynamic_anime_quiz():
-    url = "https://opentdb.com/api.php?amount=1&category=31&type=multiple"
+# --- ANIME NEWS & UPDATES FETCH SYSTEM ---
+def fetch_latest_anime_news():
+    url = "https://api.jikan.moe/v4/seasons/upcoming"
     try:
         res = requests.get(url, timeout=5).json()
-        if res.get('response_code') == 0 and res.get('results'):
-            item = res['results'][0]
-            question = html.unescape(item['question'])
-            correct_ans = html.unescape(item['correct_answer'])
-            incorrect_ans = [html.unescape(a) for a in item['incorrect_answers']]
+        if res.get('data'):
+            anime = res['data'][0]
+            title = anime.get('title', 'Unknown Anime')
+            synopsis = anime.get('synopsis', 'No details available.')[:200]
+            season = anime.get('season', 'Upcoming')
+            year = anime.get('year', '')
             
-            options = incorrect_ans + [correct_ans]
-            random.shuffle(options)
-            correct_id = options.index(correct_ans)
-            
-            return {
-                "question": question,
-                "options": options,
-                "correct_id": correct_id,
-                "explanation": f"Correct Answer: {correct_ans}"
-            }
+            text = (
+                f"🚨 **NEW UPCOMING ANIME ANNOUNCEMENT** 🚨\n\n"
+                f"📌 **Title:** {title}\n"
+                f"📅 **Season:** {season.capitalize()} {year}\n\n"
+                f"📝 **Synopsis:** {synopsis}...\n"
+            )
+            return text
     except Exception as e:
-        logging.error(f"Quiz Fetch Error: {e}")
+        logging.error(f"Anime News Fetch Error: {e}")
         
-    return {
-        "question": "Demon Slayer mein Tanjiro ki behen ka naam kya hai?",
-        "options": ["Nezuko", "Kanao", "Mitsuri", "Shinobu"],
-        "correct_id": 0,
-        "explanation": "Correct Answer: Nezuko Kamado"
-    }
+    return "🚨 **NEW ANIME UPDATE** 🚨\n\nNew season announcements & release dates are coming soon! Stay tuned."
 
 # --- HIGH-LEVEL INTELLIGENCE ENGINE ---
 def get_groq_response(chat_id, prompt_text, user_name="Boss"):
@@ -228,10 +224,9 @@ def get_groq_response(chat_id, prompt_text, user_name="Boss"):
             f"You are talking to '{user_name}'.\n"
             f"STRICT RULES:\n"
             f"1. Your Owner/Creator is strictly 'Anime Nation'. Never mention Tony Stark or Iron Man.\n"
-            f"2. Be direct, clear, highly intelligent, and natural. Match response length strictly to user intent.\n"
+            f"2. Be direct, clear, highly intelligent, and natural.\n"
             f"3. Real-time context: Time = {current_time} IST, Date = {current_date}.\n"
-            f"4. Never mention time or date unless explicitly asked.\n"
-            f"5. Do not generate unclosed Markdown syntax."
+            f"4. Do not generate unclosed Markdown syntax."
         )
     }
 
@@ -261,7 +256,7 @@ def get_groq_response(chat_id, prompt_text, user_name="Boss"):
         logging.error(f"Groq AI Error: {e}")
     return "Neural system mein temporary delay aaya hai. Please retry."
 
-# --- CHANNEL POST TRACKER & MANAGEMENT ---
+# --- CHANNEL POST TRACKER ---
 @bot.channel_post_handler(func=lambda message: True)
 def track_channel_posts(message):
     register_chat(message.chat.id, "channel")
@@ -270,7 +265,66 @@ def track_channel_posts(message):
 def track_my_status(message):
     register_chat(message.chat.id, message.chat.type)
 
-# --- COMMAND HANDLERS ---
+# --- ANIME UPDATE FETCH & APPROVAL SYSTEM ---
+@bot.message_handler(commands=['fetch_anime'])
+def fetch_anime_approval(message):
+    if message.from_user.id != OWNER_ID:
+        bot.reply_to(message, format_text("⚠️ Access Denied: Authorized for Owner only."), parse_mode="Markdown")
+        return
+
+    anime_text = fetch_latest_anime_news()
+    post_id = str(random.randint(1000, 9999))
+    PENDING_ANNOUNCEMENTS[post_id] = anime_text
+
+    markup = InlineKeyboardMarkup()
+    markup.row(
+        InlineKeyboardButton("✅ Approve & Broadcast", callback_data=f"approve_{post_id}"),
+        InlineKeyboardButton("❌ Cancel", callback_data=f"reject_{post_id}")
+    )
+
+    review_msg = (
+        f"📋 **NEW ANIME ANNOUNCEMENT FOR REVIEW**\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"{anime_text}\n\n"
+        f"👇 **Boss, kya ise channels/groups mein post karein?**"
+    )
+    bot.send_message(OWNER_ID, format_text(review_msg), reply_markup=markup, parse_mode="Markdown")
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith(('approve_', 'reject_')))
+def handle_approval_click(call):
+    action, post_id = call.data.split('_')
+    
+    if action == "approve":
+        anime_text = PENDING_ANNOUNCEMENTS.get(post_id)
+        if not anime_text:
+            bot.answer_callback_query(call.id, "⚠️ Announcement not found or expired.", show_alert=True)
+            return
+
+        all_chats = get_all_chats()
+        success = 0
+        for chat_id, chat_type in all_chats:
+            try:
+                bot.send_message(chat_id, format_text(anime_text), parse_mode="Markdown")
+                success += 1
+            except Exception:
+                pass
+
+        bot.edit_message_text(
+            f"✅ **APPROVED & BROADCASTED!**\nSent to `{success}` channels/groups.",
+            chat_id=call.message.chat.id,
+            message_id=call.message.message_id
+        )
+        PENDING_ANNOUNCEMENTS.pop(post_id, None)
+
+    elif action == "reject":
+        bot.edit_message_text(
+            "❌ **ANNOUNCEMENT CANCELLED.**",
+            chat_id=call.message.chat.id,
+            message_id=call.message.message_id
+        )
+        PENDING_ANNOUNCEMENTS.pop(post_id, None)
+
+# --- OTHER COMMANDS ---
 @bot.message_handler(commands=['start', 'help'])
 def start_cmd(message):
     register_chat(message.chat.id, message.chat.type)
@@ -279,225 +333,28 @@ def start_cmd(message):
 
     if user_id == OWNER_ID:
         total_chats, users_count, groups_count, channels_count = get_chat_metrics()
-        quiz_played = get_quiz_total_played()
-
-        support_status_text = "🔴 Offline / Unknown"
-        if SUPPORT_BOT_TOKEN:
-            try:
-                url = f"https://api.telegram.org/bot{SUPPORT_BOT_TOKEN}/getMe"
-                res = requests.get(url, timeout=5).json()
-                if res.get("ok"):
-                    support_status_text = f"🟢 Active (@{res['result']['username']})"
-            except Exception:
-                support_status_text = "🔴 Unreachable"
-
         owner_dashboard = (
             f"👑 **OWNER CONTROL PANEL**\n"
             f"━━━━━━━━━━━━━━━━━━━━━━\n"
             f"Welcome back, Boss ({user_name})!\n\n"
-            f"📊 **SYSTEM STATUS & METRICS:**\n"
-            f"• **Support Bot Status:** {support_status_text}\n"
-            f"• **Total Bot Users:** `{users_count}`\n"
-            f"• **Channels & Groups:** `{groups_count + channels_count}` (`{groups_count}` Groups | `{channels_count}` Channels)\n"
-            f"• **Anime Quiz Played Total:** `{quiz_played}` times\n\n"
-            f"🛠️ **ALL BOT COMMANDS:**\n"
-            f"• `/start` : Reload Control Dashboard\n"
-            f"• `/quiz` : Play Anime Trivia Quiz\n"
-            f"• `/v <msg>` : Voice Response Mode\n"
+            f"🛠️ **COMMANDS:**\n"
+            f"• `/fetch_anime` : Fetch latest Anime News for Review\n"
             f"• `/broadcast <msg>` : Global Broadcast\n"
             f"• `/stats` : System Analytics\n"
-            f"• `/support_status` : Support Bot Diagnostics\n"
-            f"• `/owner` : Owner Info"
+            f"• `/quiz` : Anime Quiz"
         )
         bot.reply_to(message, format_text(owner_dashboard), parse_mode="Markdown")
         return
 
-    msg_1 = (
-        f"🤖 **Hello {user_name}! Main J.A.R.V.I.S. hoon — aapka personal AI assistant.**\n\n"
-        f"Main aapki har cheez me help kar sakta hoon: coding, writing, questions, general knowledge, ya koi bhi problem solve karne me! Sida question puchiye."
-    )
-    msg_2 = (
-        f"🎮 **Is bot me Anime Quiz Game bhi hai!**\n\n"
-        f"Aap `/quiz` command type karke anime trivia game khel sakte hain!"
-    )
-    
+    msg_1 = f"🤖 **Hello {user_name}! Main J.A.R.V.I.S. hoon — aapka personal AI assistant.**"
     bot.reply_to(message, format_text(msg_1), parse_mode="Markdown")
-    bot.send_message(message.chat.id, format_text(msg_2), parse_mode="Markdown")
 
-@bot.message_handler(commands=['quiz', 'game'])
-def anime_quiz_cmd(message):
-    register_chat(message.chat.id, message.chat.type)
-    record_quiz_play(message.chat.id)
-    
-    quiz_item = fetch_dynamic_anime_quiz()
-    
-    bot.send_poll(
-        chat_id=message.chat.id,
-        question=f"⛩️ Anime Quiz: {quiz_item['question']}",
-        options=quiz_item['options'],
-        type='quiz',
-        correct_option_id=quiz_item['correct_id'],
-        explanation=quiz_item['explanation'],
-        is_anonymous=False
-    )
-
-@bot.message_handler(commands=['broadcast'])
-def broadcast_cmd(message):
-    if message.from_user.id != OWNER_ID:
-        bot.reply_to(message, format_text("⚠️ Access Denied: Authorized for Owner (Anime Nation) only."), parse_mode="Markdown")
-        return
-
-    broadcast_msg = message.text.replace('/broadcast', '').strip()
-    if not broadcast_msg:
-        bot.reply_to(message, format_text("⚠️ Command format: `/broadcast Your Message Here`"), parse_mode="Markdown")
-        return
-
-    clean_broadcast_msg = broadcast_msg.replace("⚡ Powered by - Anime Nation", "").replace("⚡ *Powered by - Anime Nation*", "").strip()
-
-    bot.reply_to(message, "📢 *Initiating Global Broadcast across all Groups & Channels...*", parse_mode="Markdown")
-    
-    all_chats = get_all_chats()
-    success = 0
-    failed = 0
-
-    for chat_id, chat_type in all_chats:
-        if chat_id == OWNER_ID and len(all_chats) > 1:
-            continue
-
-        try:
-            bot.send_message(
-                chat_id, 
-                format_text(f"📢 **J.A.R.V.I.S. BROADCAST ANNOUNCEMENT**\n━━━━━━━━━━━━━━━━━━━━━━\n\n{clean_broadcast_msg}"),
-                parse_mode="Markdown"
-            )
-            success += 1
-        except Exception:
-            failed += 1
-
-    report = (
-        f"📊 **BROADCAST REPORT COMPLETE**\n"
-        f"━━━━━━━━━━━━━━━━━━━━━━\n"
-        f"🟢 **Successfully Delivered:** `{success}` chats\n"
-        f"🔴 **Failed / Removed:** `{failed}` chats"
-    )
-    bot.reply_to(message, format_text(report), parse_mode="Markdown")
-
-@bot.message_handler(commands=['stats', 'users'])
+@bot.message_handler(commands=['stats'])
 def stats_cmd(message):
-    register_chat(message.chat.id, message.chat.type)
     if message.from_user.id != OWNER_ID:
-        bot.reply_to(message, format_text("⚠️ Access Denied: Authorized for Owner (Anime Nation) only."), parse_mode="Markdown")
         return
-
     total_chats, users_count, groups_count, channels_count = get_chat_metrics()
-    quiz_played = get_quiz_total_played()
-    
-    support_status_text = "🔴 Offline / Unknown"
-    support_username = "@TEAMNATI0Nbot"
-    
-    if SUPPORT_BOT_TOKEN:
-        try:
-            url = f"https://api.telegram.org/bot{SUPPORT_BOT_TOKEN}/getMe"
-            res = requests.get(url, timeout=5).json()
-            if res.get("ok"):
-                support_status_text = f"🟢 Active ({res['result']['first_name']})"
-                support_username = f"@{res['result']['username']}"
-        except Exception:
-            support_status_text = "🔴 Unreachable"
-
-    current_time, current_date = get_current_ist_datetime()
-
-    stats_msg = (
-        f"📊 **SYSTEM METRICS REPORT**\n"
-        f"━━━━━━━━━━━━━━━━━━━━━━\n\n"
-        f"🤖 **J.A.R.V.I.S. AI ENGINE**\n"
-        f"• **Owner:** Anime Nation\n"
-        f"• **Total Registered Users:** `{users_count}`\n"
-        f"• **Total Channels & Groups Joined:** `{groups_count + channels_count}` (`{groups_count}` Groups | `{channels_count}` Channels)\n"
-        f"• **Anime Quiz Played Total:** `{quiz_played}` times\n"
-        f"• **Status:** 🟢 Active & Operational\n\n"
-        f"🎧 **SUPPORT BOT ({support_username})**\n"
-        f"• **Status:** {support_status_text}\n\n"
-        f"🕒 **SYSTEM TIME (IST):** `{current_time}`\n"
-        f"📅 **SYSTEM DATE:** `{current_date}`"
-    )
-    bot.reply_to(message, format_text(stats_msg), parse_mode="Markdown")
-
-@bot.message_handler(commands=['support_status'])
-def check_support_status(message):
-    register_chat(message.chat.id, message.chat.type)
-    if not SUPPORT_BOT_TOKEN:
-        bot.reply_to(message, format_text("⚠️ `SUPPORT_BOT_TOKEN` configured nahi hai."), parse_mode="Markdown")
-        return
-
-    try:
-        url = f"https://api.telegram.org/bot{SUPPORT_BOT_TOKEN}/getMe"
-        res = requests.get(url, timeout=5).json()
-
-        if res.get("ok"):
-            bot_name = res["result"]["first_name"]
-            bot_username = res["result"]["username"]
-            bot.reply_to(
-                message,
-                format_text(f"🟢 **SUPPORT BOT IS ONLINE!**\n\n• **Name:** {bot_name}\n• **Username:** @{bot_username}"),
-                parse_mode="Markdown"
-            )
-        else:
-            bot.send_message(OWNER_ID, format_text("🚨 **ALERT: SUPPORT BOT IS OFFLINE!**"), parse_mode="Markdown")
-            bot.reply_to(message, format_text("🔴 **SUPPORT BOT IS OFFLINE!** Alert sent to Owner."), parse_mode="Markdown")
-    except Exception as e:
-        bot.send_message(OWNER_ID, format_text(f"🚨 **ALERT: UNREACHABLE!**\nError: `{e}`"), parse_mode="Markdown")
-        bot.reply_to(message, format_text(f"🔴 **SUPPORT BOT UNREACHABLE!**\nError: `{e}`"), parse_mode="Markdown")
-
-@bot.message_handler(commands=['owner'])
-def owner_cmd(message):
-    register_chat(message.chat.id, message.chat.type)
-    bot.reply_to(message, format_text("👑 **Owner & Developer:** Anime Nation"), parse_mode="Markdown")
-
-@bot.message_handler(commands=['v', 'voice'])
-def handle_voice_chat(message):
-    register_chat(message.chat.id, message.chat.type)
-    user_name = message.from_user.first_name or "User"
-    user_query = message.text.replace('/voice', '').replace('/v', '').strip()
-    if not user_query:
-        bot.reply_to(message, format_text("Query likhein voice response ke liye."), parse_mode="Markdown")
-        return
-
-    try:
-        bot.send_chat_action(message.chat.id, 'record_audio')
-        ai_reply = get_groq_response(message.chat.id, user_query, user_name=user_name)
-        clean_text = ai_reply.replace('*', '').replace('#', '').replace('`', '')
-        
-        audio_file = "voice_reply.mp3"
-        
-        async def generate_tts():
-            communicate = edge_tts.Communicate(
-                clean_text[:1000], 
-                "hi-IN-MadhurNeural", 
-                pitch="-15Hz", 
-                rate="-10%"
-            )
-            await communicate.save(audio_file)
-
-        asyncio.run(generate_tts())
-
-        with open(audio_file, 'rb') as voice:
-            try:
-                bot.send_voice(
-                    message.chat.id, 
-                    voice=voice, 
-                    caption=format_text(f"🎙️ **J.A.R.V.I.S. (Voice):**\n\n{ai_reply[:900]}..."), 
-                    parse_mode="Markdown"
-                )
-            except Exception:
-                bot.send_voice(
-                    message.chat.id, 
-                    voice=voice, 
-                    caption=f"🎙️ J.A.R.V.I.S. (Voice):\n\n{clean_text[:900]}...\n\n⚡ Powered by - Anime Nation"
-                )
-
-    except Exception as e:
-        bot.reply_to(message, format_text(f"Voice Synthesis Error: `{e}`"), parse_mode="Markdown")
+    bot.reply_to(message, format_text(f"📊 **TOTAL USERS:** `{users_count}` | **CHANNELS/GROUPS:** `{groups_count + channels_count}`"), parse_mode="Markdown")
 
 # --- MAIN AI CHAT HANDLER ---
 @bot.message_handler(func=lambda message: True)
@@ -511,36 +368,26 @@ def handle_ai_chat(message):
             message.reply_to_message.from_user is not None and 
             message.reply_to_message.from_user.id == bot.get_me().id
         )
-        is_bot_mentioned = (
-            BOT_USERNAME != "" and 
-            BOT_USERNAME in message.text.lower()
-        )
-        
+        is_bot_mentioned = (BOT_USERNAME != "" and BOT_USERNAME in message.text.lower())
         if not (is_reply_to_bot or is_bot_mentioned):
             return
 
     clean_prompt = message.text
     if BOT_USERNAME and f"@{BOT_USERNAME}" in clean_prompt.lower():
         clean_prompt = clean_prompt.lower().replace(f"@{BOT_USERNAME}", "").strip()
-        
-    if clean_prompt.startswith('/'):
-        clean_prompt = clean_prompt.split(' ', 1)[-1]
 
     try:
         bot.send_chat_action(message.chat.id, 'typing')
         ai_reply = get_groq_response(message.chat.id, clean_prompt, user_name=user_name)
-        
-        try:
-            bot.reply_to(message, format_text(ai_reply), parse_mode="Markdown")
-        except Exception:
-            plain_footer = "⚡ Powered by - Anime Nation"
-            bot.reply_to(message, f"{ai_reply}\n\n{plain_footer}")
-
+        bot.reply_to(message, format_text(ai_reply), parse_mode="Markdown")
     except Exception as e:
         bot.reply_to(message, format_text(f"System Error: `{e}`"), parse_mode="Markdown")
 
-# --- ENTRYPOINT ---
 if __name__ == "__main__":
     keep_alive()
     try:
-        bot.delete_webho
+        bot.delete_webhook(drop_pending_updates=True)
+    except Exception:
+        pass
+    bot.infinity_polling(timeout=10, long_polling_timeout=5, allowed_updates=['message', 'my_chat_member', 'channel_post', 'callback_query'])
+    
