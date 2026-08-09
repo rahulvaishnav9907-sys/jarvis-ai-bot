@@ -52,7 +52,6 @@ try:
 except Exception as e:
     logging.error(f"Failed to fetch bot username: {e}")
 
-# Pending approval cache
 PENDING_ANNOUNCEMENTS = {}
 
 # --- DATABASE SETUP ---
@@ -183,58 +182,48 @@ def format_text(text):
 def get_current_ist_datetime():
     ist = pytz.timezone('Asia/Kolkata')
     now = datetime.datetime.now(ist)
-    return now.strftime("%I:%M %p"), now.strftime("%A, %B %d, %Y")
+    return now.strftime("%I:%M %p"), now.strftime("%B %d, %Y")
 
-# --- AI DRIVEN REAL ANIME UPDATE GENERATOR ---
+# --- HIGH QUALITY ANIME UPDATE GENERATOR WITH DATE & TIME ---
 def fetch_latest_anime_news():
+    current_time, current_date = get_current_ist_datetime()
+    
     url = "https://api.jikan.moe/v4/seasons/upcoming"
     try:
         res = requests.get(url, timeout=6).json()
         if res.get('data'):
             anime_list = res['data']
-            selected = random.choice(anime_list[:10])
+            selected = random.choice(anime_list[:15])
             title = selected.get('title', 'Unknown Anime')
             synopsis = selected.get('synopsis', 'Synopsis unavailable.')
-            if synopsis and len(synopsis) > 250:
-                synopsis = synopsis[:250] + "..."
+            if synopsis and len(synopsis) > 220:
+                synopsis = synopsis[:220] + "..."
             
             season = selected.get('season', 'Upcoming')
             year = selected.get('year', '2026/2027')
+            episodes = selected.get('episodes', 'TBA')
             
             return (
-                f"🚨 **NEW UPCOMING ANIME ANNOUNCEMENT** 🚨\n\n"
-                f"📌 **Title:** {title}\n"
-                f"📅 **Expected Release:** {season.capitalize()} {year}\n\n"
-                f"📝 **Synopsis:**\n{synopsis}"
+                f"🚨 **NEW ANIME ANNOUNCEMENT** 🚨\n"
+                f"━━━━━━━━━━━━━━━━━━━━━━\n\n"
+                f"📌 **Title:** `{title}`\n"
+                f"🗓️ **Release Period:** `{season.capitalize()} {year}`\n"
+                f"🎬 **Episodes:** `{episodes}`\n\n"
+                f"📝 **Synopsis:**\n{synopsis}\n\n"
+                f"🕒 **Update Fetched:** `{current_date}` at `{current_time} IST`"
             )
     except Exception as e:
         logging.error(f"API Error: {e}")
 
-    # AI Fallback generator if API drops
-    if GROQ_API_KEY:
-        try:
-            prompt = (
-                "Generate a realistic, exciting Telegram announcement post about a trending or upcoming popular anime series or new season release. "
-                "Format strictly in Markdown with bold titles, emojis, release period, and a brief synopsis."
-            )
-            url = "https://api.groq.com/openai/v1/chat/completions"
-            headers = {"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"}
-            payload = {
-                "model": "llama-3.3-70b-versatile",
-                "messages": [{"role": "user", "content": prompt}],
-                "temperature": 0.7
-            }
-            res = requests.post(url, headers=headers, json=payload, timeout=10)
-            if res.status_code == 200:
-                return res.json()['choices'][0]['message']['content']
-        except Exception as e:
-            logging.error(f"AI News Error: {e}")
-
+    # High quality fallback with date/time
     return (
-        f"🚨 **NEW ANIME UPDATE: Demon Slayer / Jujutsu Kaisen Upcoming Season** 🚨\n\n"
-        f"📌 **Status:** Official Production Confirmed\n"
-        f"📅 **Expected Release:** Late 2026 / Early 2027\n\n"
-        f"📝 **Details:** Production status updated for high-demand anime projects."
+        f"🚨 **NEW ANIME ANNOUNCEMENT** 🚨\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"📌 **Title:** `Demon Slayer: Kimetsu no Yaiba - Next Chapter`\n"
+        f"🗓️ **Release Period:** `Late 2026 / Early 2027`\n"
+        f"🎬 **Status:** `Official Production Active`\n\n"
+        f"📝 **Synopsis:**\nOfficial production and global premiere schedule updated for upcoming anime projects.\n\n"
+        f"🕒 **Update Fetched:** `{current_date}` at `{current_time} IST`"
     )
 
 # --- HIGH-LEVEL INTELLIGENCE ENGINE ---
@@ -254,7 +243,7 @@ def get_groq_response(chat_id, prompt_text, user_name="Boss"):
             f"1. Your Owner/Creator is strictly 'Anime Nation'. Never mention Tony Stark or Iron Man.\n"
             f"2. Be direct, clear, highly intelligent, and natural.\n"
             f"3. Real-time context: Time = {current_time} IST, Date = {current_date}.\n"
-            f"4. Do not generate unclosed Markdown syntax."
+            f"4. Do NOT use markdown headers like '#' or '##'. Use bold text and clean bullet points."
         )
     }
 
