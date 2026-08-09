@@ -3,6 +3,7 @@ import logging
 import asyncio
 import datetime
 import random
+import time
 import pytz
 import requests
 import telebot
@@ -20,7 +21,7 @@ app = Flask('')
 
 @app.route('/')
 def home():
-    return "J.A.R.V.I.S. Core Engine Active!"
+    return "J.A.R.V.I.S. Core Engine Active & Auto-Scheduler Running!"
 
 def run_web():
     port = int(os.environ.get("PORT", 8080))
@@ -53,6 +54,7 @@ except Exception as e:
     logging.error(f"Failed to fetch bot username: {e}")
 
 PENDING_ANNOUNCEMENTS = {}
+LAST_SENT_ANIME = ""
 
 # --- DATABASE SETUP ---
 DB_FILE = "jarvis_users.db"
@@ -215,7 +217,6 @@ def fetch_latest_anime_news():
     except Exception as e:
         logging.error(f"API Error: {e}")
 
-    # High quality fallback with date/time
     return (
         f"🚨 **NEW ANIME ANNOUNCEMENT** 🚨\n"
         f"━━━━━━━━━━━━━━━━━━━━━━\n\n"
@@ -225,6 +226,42 @@ def fetch_latest_anime_news():
         f"📝 **Synopsis:**\nOfficial production and global premiere schedule updated for upcoming anime projects.\n\n"
         f"🕒 **Update Fetched:** `{current_date}` at `{current_time} IST`"
     )
+
+# --- AUTOMATIC BACKGROUND SCHEDULER (SENDS FIRST TO OWNER) ---
+def start_auto_anime_scheduler():
+    def scheduler_loop():
+        global LAST_SENT_ANIME
+        time.sleep(15)  # Initial delay after bot starts
+        while True:
+            try:
+                anime_text = fetch_latest_anime_news()
+                if anime_text != LAST_SENT_ANIME:
+                    LAST_SENT_ANIME = anime_text
+                    post_id = str(random.randint(1000, 9999))
+                    PENDING_ANNOUNCEMENTS[post_id] = anime_text
+
+                    markup = InlineKeyboardMarkup()
+                    markup.row(
+                        InlineKeyboardButton("✅ Approve & Broadcast", callback_data=f"approve_{post_id}"),
+                        InlineKeyboardButton("❌ Cancel", callback_data=f"reject_{post_id}")
+                    )
+
+                    review_msg = (
+                        f"🔔 **AUTO-DETECTED NEW ANIME UPDATE!**\n"
+                        f"━━━━━━━━━━━━━━━━━━━━━━\n\n"
+                        f"{anime_text}\n\n"
+                        f"👇 **Boss, ise channels/groups mein post karein?**"
+                    )
+                    bot.send_message(OWNER_ID, format_text(review_msg), reply_markup=markup, parse_mode="Markdown")
+            except Exception as e:
+                logging.error(f"Scheduler Loop Error: {e}")
+            
+            # Auto-check every 6 hours (21600 seconds)
+            time.sleep(21600)
+
+    t = Thread(target=scheduler_loop)
+    t.daemon = True
+    t.start()
 
 # --- HIGH-LEVEL INTELLIGENCE ENGINE ---
 def get_groq_response(chat_id, prompt_text, user_name="Boss"):
@@ -356,7 +393,7 @@ def start_cmd(message):
             f"━━━━━━━━━━━━━━━━━━━━━━\n"
             f"Welcome back, Boss ({user_name})!\n\n"
             f"🛠️ **COMMANDS:**\n"
-            f"• `/fetch_anime` : Fetch latest Anime News for Review\n"
+            f"• `/fetch_anime` : Manual Fetch Anime News\n"
             f"• `/broadcast <msg>` : Global Broadcast\n"
             f"• `/stats` : System Analytics\n"
             f"• `/quiz` : Anime Quiz"
@@ -403,8 +440,10 @@ def handle_ai_chat(message):
 
 if __name__ == "__main__":
     keep_alive()
+    start_auto_anime_scheduler()
     try:
         bot.delete_webhook(drop_pending_updates=True)
     except Exception:
         pass
     bot.infinity_polling(timeout=10, long_polling_timeout=5, allowed_updates=['message', 'my_chat_member', 'channel_post', 'callback_query'])
+    
