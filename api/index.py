@@ -18,7 +18,7 @@ app = Flask('')
 
 @app.route('/')
 def home():
-    return "J.A.R.V.I.S. Core Engine Active!"
+    return "J.A.R.V.I.S. Engine Online & Running!"
 
 def run_web():
     port = int(os.environ.get("PORT", 8080))
@@ -31,7 +31,6 @@ def keep_alive():
 
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "").strip()
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "").strip()
-SUPPORT_BOT_TOKEN = os.environ.get("SUPPORT_BOT_TOKEN", "").strip()
 
 try:
     OWNER_ID = int(os.environ.get("OWNER_ID", "8088024998"))
@@ -41,47 +40,43 @@ except ValueError:
 bot = telebot.TeleBot(BOT_TOKEN, threaded=False)
 PENDING_ANNOUNCEMENTS = {}
 
-# --- DEEP DATABASE SETUP & HISTORY TRACKING ---
+# --- DATABASE SETUP ---
 DB_FILE = "jarvis_users.db"
 
 def init_db():
-    conn = sqlite3.connect(DB_FILE)
-    cursor = conn.cursor()
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS users (
-            user_id INTEGER PRIMARY KEY,
-            first_name TEXT,
-            last_name TEXT,
-            username TEXT,
-            language_code TEXT,
-            is_premium INTEGER,
-            chat_type TEXT,
-            registered_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    ''')
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS chats (
-            chat_id INTEGER PRIMARY KEY,
-            chat_type TEXT,
-            registered_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    ''')
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS quiz_stats (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            chat_id INTEGER,
-            played_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    ''')
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS sent_anime_history (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            anime_title TEXT,
-            sent_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    ''')
-    conn.commit()
-    conn.close()
+    try:
+        conn = sqlite3.connect(DB_FILE)
+        cursor = conn.cursor()
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS users (
+                user_id INTEGER PRIMARY KEY,
+                first_name TEXT,
+                last_name TEXT,
+                username TEXT,
+                language_code TEXT,
+                is_premium INTEGER,
+                chat_type TEXT,
+                registered_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS chats (
+                chat_id INTEGER PRIMARY KEY,
+                chat_type TEXT,
+                registered_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS sent_anime_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                anime_title TEXT,
+                sent_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        logging.error(f"Init DB Error: {e}")
 
 init_db()
 
@@ -93,7 +88,7 @@ def record_sent_anime(title):
         conn.commit()
         conn.close()
     except Exception as e:
-        logging.error(f"Sent Anime Record Error: {e}")
+        logging.error(f"Sent Record Error: {e}")
 
 def get_recent_sent_titles():
     try:
@@ -152,20 +147,26 @@ def save_and_notify_user(user, chat_type):
         logging.error(f"User Save Error: {e}")
 
 def get_all_detailed_users():
-    conn = sqlite3.connect(DB_FILE)
-    cursor = conn.cursor()
-    cursor.execute("SELECT user_id, first_name, username, language_code, registered_at FROM users")
-    rows = cursor.fetchall()
-    conn.close()
-    return rows
+    try:
+        conn = sqlite3.connect(DB_FILE)
+        cursor = conn.cursor()
+        cursor.execute("SELECT user_id, first_name, username, language_code, registered_at FROM users")
+        rows = cursor.fetchall()
+        conn.close()
+        return rows
+    except Exception:
+        return []
 
 def get_all_chats():
-    conn = sqlite3.connect(DB_FILE)
-    cursor = conn.cursor()
-    cursor.execute("SELECT chat_id, chat_type FROM chats")
-    rows = cursor.fetchall()
-    conn.close()
-    return rows
+    try:
+        conn = sqlite3.connect(DB_FILE)
+        cursor = conn.cursor()
+        cursor.execute("SELECT chat_id, chat_type FROM chats")
+        rows = cursor.fetchall()
+        conn.close()
+        return rows
+    except Exception:
+        return []
 
 def format_text(text):
     if "⚡ Powered by - Anime Nation" not in text:
@@ -177,7 +178,7 @@ def get_current_ist_datetime():
     now = datetime.datetime.now(ist)
     return now.strftime("%I:%M %p"), now.strftime("%B %d, %Y")
 
-# --- STRICT DYNAMIC NEWS GENERATOR WITH VALID DATES ---
+# --- ANIME UPDATE GENERATOR ---
 def fetch_latest_anime_news():
     current_time, current_date = get_current_ist_datetime()
     recent_sent = get_recent_sent_titles()
@@ -207,7 +208,7 @@ def fetch_latest_anime_news():
                 f"Write a short, exciting Telegram announcement about an upcoming or newly announced anime project: '{selected_topic}'.\n\n"
                 f"STRICT DATE RULE:\n"
                 f"- The current year is 2026. NEVER write past years like 2023, 2024, or 2025.\n"
-                f"- Write: '📅 Expected Release: <Late 2026 or 2027>'\n\n"
+                f"- Write: '📅 Expected Release: Late 2026 or 2027'\n\n"
                 f"STRICT DUPLICATE PREVENTION RULE:\n"
                 f"DO NOT write about these recently covered anime: [{recent_str}, Demon Slayer, Oshi no Ko].\n\n"
                 f"Format with clean Markdown:\n"
@@ -236,21 +237,22 @@ def fetch_latest_anime_news():
         except Exception as e:
             logging.error(f"AI Generator Error: {e}")
 
-    fallback_title = f"Chainsaw Man: Reze Arc Movie / Season 2 ({random.randint(100, 999)})"
+    fallback_title = f"Chainsaw Man: Reze Arc Movie / Season 2"
     record_sent_anime(fallback_title)
     return (
         f"🚨 **NEW ANIME ANNOUNCEMENT** 🚨\n\n"
         f"📌 **Title:** `{fallback_title}`\n"
-        f"📅 **Expected Release:** `Late 2026`\n"
+        f"📅 **Expected Release:** `Late 2026 / Early 2027`\n"
         f"🎬 **Studio:** `MAPPA`\n\n"
         f"📝 **Synopsis:** Official production and global theatrical release schedule updated.\n\n"
         f"━━━━━━━━━━━━━━━━━━━━━━\n"
         f"🕒 **Update Fetched:** `{current_date}` at `{current_time} IST`"
     )
 
-# --- AUTO-SCHEDULER ---
+# --- BACKGROUND SCHEDULER ---
 def start_auto_anime_scheduler():
     def scheduler_loop():
+        time.sleep(20)
         while True:
             try:
                 anime_text = fetch_latest_anime_news()
@@ -272,7 +274,7 @@ def start_auto_anime_scheduler():
     t.daemon = True
     t.start()
 
-# --- ALL COMMAND HANDLERS ---
+# --- TELEGRAM COMMAND HANDLERS ---
 @bot.message_handler(commands=['start', 'help'])
 def start_cmd(message):
     save_and_notify_user(message.from_user, message.chat.type)
@@ -290,7 +292,7 @@ def all_users_cmd(message):
 
     users = get_all_detailed_users()
     if not users:
-        bot.reply_to(message, "⚠️ Database mein abhi koi extra users register nahi hue hain.")
+        bot.reply_to(message, "⚠️ Database mein abhi koi extra users registered nahi hain.")
         return
 
     msg = f"👥 **REGISTERED USER LIST ({len(users)} Total):**\n━━━━━━━━━━━━━━━━━━━━━━\n\n"
@@ -312,7 +314,7 @@ def user_info_cmd(message):
 
     args = message.text.split()
     if len(args) < 2 or args[1] == "<user_id>":
-        bot.reply_to(message, "⚠️ Format: `/user_info 8088024998` (सच्ची User ID डालें)", parse_mode="Markdown")
+        bot.reply_to(message, "⚠️ Format: `/user_info 8088024998` (असली User ID लिखें)", parse_mode="Markdown")
         return
 
     target_id = args[1]
@@ -382,5 +384,8 @@ def track_and_reply(message):
 if __name__ == "__main__":
     keep_alive()
     start_auto_anime_scheduler()
-    bot.infinity_polling(allowed_updates=['message', 'callback_query', 'channel_post'])
-    
+    try:
+        bot.delete_webhook(drop_pending_updates=True)
+    except Exception:
+        pass
+    bot.infinity_polling(timeout=20, long_polling_timeout=10, allowed_updates=['message', 'callback_query', 'channel_post'])
