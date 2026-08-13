@@ -108,6 +108,8 @@ def get_recent_sent_titles():
 
 def save_and_notify_user(user, chat_type):
     try:
+        if not user or not hasattr(user, 'id'):
+            return
         conn = sqlite3.connect(DB_FILE)
         cursor = conn.cursor()
         cursor.execute("SELECT user_id FROM users WHERE user_id = ?", (user.id,))
@@ -116,7 +118,7 @@ def save_and_notify_user(user, chat_type):
         first_name = user.first_name or "N/A"
         last_name = user.last_name or "N/A"
         username = f"@{user.username}" if user.username else "No Username"
-        lang = user.language_code or "Unknown"
+        lang = getattr(user, 'language_code', None) or "Unknown"
         is_premium = 1 if getattr(user, 'is_premium', False) else 0
 
         cursor.execute('''
@@ -175,7 +177,7 @@ def get_current_ist_datetime():
     now = datetime.datetime.now(ist)
     return now.strftime("%I:%M %p"), now.strftime("%B %d, %Y")
 
-# --- STRICT DYNAMIC NEWS GENERATOR WITH HISTORY CHECK ---
+# --- DYNAMIC NEWS GENERATOR ---
 def fetch_latest_anime_news():
     current_time, current_date = get_current_ist_datetime()
     recent_sent = get_recent_sent_titles()
@@ -198,7 +200,6 @@ def fetch_latest_anime_news():
                 "Classroom of the Elite Season 4"
             ]
             
-            # Filter out recently sent ones
             available_pool = [a for a in anime_pool if not any(r.lower() in a.lower() for r in recent_sent)]
             selected_topic = random.choice(available_pool if available_pool else anime_pool)
             
@@ -272,7 +273,7 @@ def start_auto_anime_scheduler():
     t.start()
 
 # --- COMMANDS ---
-@bot.message_handler(commands=['all_users'])
+@bot.message_handler(commands=['all_users', 'allusers'])
 def all_users_cmd(message):
     save_and_notify_user(message.from_user, message.chat.type)
     if message.from_user.id != OWNER_ID:
@@ -301,8 +302,8 @@ def user_info_cmd(message):
         return
 
     args = message.text.split()
-    if len(args) < 2:
-        bot.reply_to(message, "⚠️ Format: `/user_info <user_id>`", parse_mode="Markdown")
+    if len(args) < 2 or args[1] == "<user_id>":
+        bot.reply_to(message, "⚠️ Format: `/user_info 8088024998` (असली User ID लिखें)", parse_mode="Markdown")
         return
 
     target_id = args[1]
@@ -313,7 +314,7 @@ def user_info_cmd(message):
     conn.close()
 
     if not user:
-        bot.reply_to(message, "❌ User database mein nahi mila.")
+        bot.reply_to(message, f"❌ User ID `{target_id}` database mein nahi mila.", parse_mode="Markdown")
         return
 
     u_id, fname, lname, uname, lang, is_prem, ctype, reg_time = user
