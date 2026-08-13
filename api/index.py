@@ -177,7 +177,7 @@ def get_current_ist_datetime():
     now = datetime.datetime.now(ist)
     return now.strftime("%I:%M %p"), now.strftime("%B %d, %Y")
 
-# --- DYNAMIC NEWS GENERATOR ---
+# --- STRICT DYNAMIC NEWS GENERATOR WITH VALID DATES ---
 def fetch_latest_anime_news():
     current_time, current_date = get_current_ist_datetime()
     recent_sent = get_recent_sent_titles()
@@ -205,14 +205,14 @@ def fetch_latest_anime_news():
             
             prompt = (
                 f"Write a short, exciting Telegram announcement about an upcoming or newly announced anime project: '{selected_topic}'.\n\n"
+                f"STRICT DATE RULE:\n"
+                f"- The current year is 2026. NEVER write past years like 2023, 2024, or 2025.\n"
+                f"- Write: '📅 Expected Release: <Late 2026 or 2027>'\n\n"
                 f"STRICT DUPLICATE PREVENTION RULE:\n"
                 f"DO NOT write about these recently covered anime: [{recent_str}, Demon Slayer, Oshi no Ko].\n\n"
-                f"RELEASE DATE RULE:\n"
-                f"- If exact date is known, write: '📅 Release Date: <Exact Date>'\n"
-                f"- If no exact date, write: '📅 Expected Release: <Season/Year e.g. Fall 2026 or Early 2027>'\n\n"
                 f"Format with clean Markdown:\n"
                 f"📌 Title\n"
-                f"📅 Release Date / Expected Release\n"
+                f"📅 Expected Release\n"
                 f"🎬 Studio / Production Status\n"
                 f"📝 Short Synopsis & Hype Summary\n"
             )
@@ -222,7 +222,7 @@ def fetch_latest_anime_news():
             payload = {
                 "model": "llama-3.3-70b-versatile",
                 "messages": [{"role": "user", "content": prompt}],
-                "temperature": 0.95
+                "temperature": 0.85
             }
             res = requests.post(url, headers=headers, json=payload, timeout=20)
             if res.status_code == 200:
@@ -272,7 +272,16 @@ def start_auto_anime_scheduler():
     t.daemon = True
     t.start()
 
-# --- COMMANDS ---
+# --- ALL COMMAND HANDLERS ---
+@bot.message_handler(commands=['start', 'help'])
+def start_cmd(message):
+    save_and_notify_user(message.from_user, message.chat.type)
+    user_name = message.from_user.first_name or "User"
+    if message.from_user.id == OWNER_ID:
+        bot.reply_to(message, format_text(f"👑 **WELCOME OWNER!**\n\nCommands:\n• `/all_users` : Full Users List\n• `/user_info <id>` : User Details\n• `/fetch_anime` : Fetch Anime News"), parse_mode="Markdown")
+        return
+    bot.reply_to(message, format_text(f"🤖 **Hello {user_name}! Main J.A.R.V.I.S. hoon — aapka personal AI assistant.**"), parse_mode="Markdown")
+
 @bot.message_handler(commands=['all_users', 'allusers'])
 def all_users_cmd(message):
     save_and_notify_user(message.from_user, message.chat.type)
@@ -281,14 +290,14 @@ def all_users_cmd(message):
 
     users = get_all_detailed_users()
     if not users:
-        bot.reply_to(message, "⚠️ Koi users database mein nahi mile.")
+        bot.reply_to(message, "⚠️ Database mein abhi koi extra users register nahi hue hain.")
         return
 
     msg = f"👥 **REGISTERED USER LIST ({len(users)} Total):**\n━━━━━━━━━━━━━━━━━━━━━━\n\n"
     for idx, u in enumerate(users, 1):
         u_id, name, username, lang, reg_date = u
         msg += f"{idx}. **{name}** ({username})\n   • ID: `{u_id}` | Lang: `{lang}`\n   • Date: `{reg_date}`\n\n"
-        if len(msg) > 3500:
+        if len(msg) > 3000:
             bot.send_message(OWNER_ID, msg, parse_mode="Markdown")
             msg = ""
 
@@ -303,7 +312,7 @@ def user_info_cmd(message):
 
     args = message.text.split()
     if len(args) < 2 or args[1] == "<user_id>":
-        bot.reply_to(message, "⚠️ Format: `/user_info 8088024998` (असली User ID लिखें)", parse_mode="Markdown")
+        bot.reply_to(message, "⚠️ Format: `/user_info 8088024998` (सच्ची User ID डालें)", parse_mode="Markdown")
         return
 
     target_id = args[1]
@@ -332,14 +341,20 @@ def user_info_cmd(message):
     )
     bot.reply_to(message, info_msg, parse_mode="Markdown")
 
-@bot.message_handler(commands=['start', 'help'])
-def start_cmd(message):
+@bot.message_handler(commands=['fetch_anime'])
+def manual_fetch(message):
     save_and_notify_user(message.from_user, message.chat.type)
-    user_name = message.from_user.first_name or "User"
-    if message.from_user.id == OWNER_ID:
-        bot.reply_to(message, format_text(f"👑 **WELCOME OWNER!**\n\nCommands:\n• `/all_users` : Full Users List\n• `/user_info <id>` : User Details\n• `/fetch_anime` : Fetch Anime News"), parse_mode="Markdown")
-        return
-    bot.reply_to(message, format_text(f"🤖 **Hello {user_name}! Main J.A.R.V.I.S. hoon — aapka personal AI assistant.**"), parse_mode="Markdown")
+    if message.from_user.id != OWNER_ID: return
+    bot.send_chat_action(message.chat.id, 'typing')
+    anime_text = fetch_latest_anime_news()
+    post_id = str(random.randint(1000, 9999))
+    PENDING_ANNOUNCEMENTS[post_id] = anime_text
+    markup = InlineKeyboardMarkup()
+    markup.row(
+        InlineKeyboardButton("✅ Approve & Broadcast", callback_data=f"approve_{post_id}"), 
+        InlineKeyboardButton("❌ Cancel", callback_data=f"reject_{post_id}")
+    )
+    bot.send_message(OWNER_ID, format_text(f"🔔 **MANUAL FETCH:**\n\n{anime_text}\n\n👇 Post karein?"), reply_markup=markup, parse_mode="Markdown")
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith(('approve_', 'reject_')))
 def handle_approval_click(call):
@@ -359,21 +374,6 @@ def handle_approval_click(call):
     else:
         bot.edit_message_text("❌ **CANCELLED.**", chat_id=call.message.chat.id, message_id=call.message.message_id)
         PENDING_ANNOUNCEMENTS.pop(post_id, None)
-
-@bot.message_handler(commands=['fetch_anime'])
-def manual_fetch(message):
-    save_and_notify_user(message.from_user, message.chat.type)
-    if message.from_user.id != OWNER_ID: return
-    bot.send_chat_action(message.chat.id, 'typing')
-    anime_text = fetch_latest_anime_news()
-    post_id = str(random.randint(1000, 9999))
-    PENDING_ANNOUNCEMENTS[post_id] = anime_text
-    markup = InlineKeyboardMarkup()
-    markup.row(
-        InlineKeyboardButton("✅ Approve & Broadcast", callback_data=f"approve_{post_id}"), 
-        InlineKeyboardButton("❌ Cancel", callback_data=f"reject_{post_id}")
-    )
-    bot.send_message(OWNER_ID, format_text(f"🔔 **MANUAL FETCH:**\n\n{anime_text}\n\n👇 Post karein?"), reply_markup=markup, parse_mode="Markdown")
 
 @bot.message_handler(func=lambda message: True)
 def track_and_reply(message):
